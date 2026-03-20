@@ -72,26 +72,26 @@ Two complementary outlier definitions are used:
 
 | Scope | Method | Threshold | Outliers |
 |---|---|---|---|
-| **Global** | 90th percentile | > 99 min | 15 cases (10.3%) |
+| **Global** | 90th percentile | >= 99 min (90th percentile = 98.6 min) | 15 cases (10.3%) |
 | **Dr. A** | IQR (Q3 + 1.0 x IQR) | > 89 min | 4 cases |
 | **Dr. B** | IQR (Q3 + 1.0 x IQR) | > 120 min | 6 cases |
 | **Dr. C** | IQR (Q3 + 1.0 x IQR) | > 102 min | 1 case |
 
 - **Global (90th percentile):** Captures enough positive cases (15) for stable LightGBM modeling. Binary target: Normal vs Outlier.
-- **Per-physician (IQR):** Q3 + 1.0 x IQR applied within each physician's own distribution. Thresholds scale with individual caseload and variability rather than being dominated by the global pool.
+- **Per-physician (IQR):** Q3 + 1.0 x IQR applied within each physician's own distribution. Thresholds scale with individual caseload and variability rather than being dominated by the global pool. Per-physician outliers use Q3 + 1.0×IQR (tighter than the standard 1.5× to capture enough outliers for modeling with small per-physician samples).
 
 ### 4. Feature Engineering
 
-15 features in total:
+14 features in total:
 
 | Category | Features | Count |
 |---|---|---:|
-| Granular procedural timings | PT PREP/INTUBATION, ACCESS, TSP, PRE-MAP, ABL DURATION, ABL TIME, #ABL, #APPLICATIONS, POST CARE/EXTUBATION | 9 |
+| Granular procedural timings | PT PREP/INTUBATION, ACCESS, TSP, PRE-MAP, ABL DURATION, ABL TIME, #ABL, POST CARE/EXTUBATION | 8 |
 | Physician encoding | Physician identifier (label-encoded) | 1 |
 | Note-derived binary flags | CTI, BOX, PST, SVC (additional procedures performed) | 4 |
 | Scheduling | Case order within the day (1st, 2nd, 3rd, ...) | 1 |
 
-**Excluded:** CASE TIME, SKIN-SKIN, LA DWELL TIME (aggregate sub-totals that leak the target).
+**Excluded:** CASE TIME, SKIN-SKIN, LA DWELL TIME (aggregate sub-totals that leak the target). #APPLICATIONS excluded — deterministic function of #ABL (always 3x per protocol, r=1.0 correlation).
 
 ### 5. LightGBM Classification
 
@@ -123,7 +123,7 @@ Two complementary outlier definitions are used:
 
 ### What drives long cases -- and it differs by physician
 
-- **Dr. B's bottleneck is ABL DURATION** (ablation start-to-end): outlier cases average 50.7 min vs. 25.3 min for normal cases (+101%). Crucially, ABL TIME (actual pulse-on energy delivery) is nearly identical between outlier and normal cases (7.5 vs. 7.7 min). This means Dr. B is spending twice as long **repositioning the catheter between ablation sites**, not delivering more energy.
+- **Dr. B's bottleneck is ABL DURATION** (ablation start-to-end, per-physician IQR analysis, 6 outliers >120 min): outlier cases average 50.7 min vs. 25.3 min for normal cases (+101%). Crucially, ABL TIME (actual pulse-on energy delivery) is nearly identical between outlier and normal cases (7.5 vs. 7.7 min). This means Dr. B is spending twice as long **repositioning the catheter between ablation sites**, not delivering more energy.
 - **Dr. A's bottleneck is completely different -- PT PREP/INTUBATION** (patient positioning, monitoring hookup, anesthesia induction, intubation, sterile draping). A different phase entirely. Blanket process changes would not help both physicians; interventions must be physician-specific.
 
 ### PRE-MAP is a hidden complexity signal
@@ -143,6 +143,10 @@ Two complementary outlier definitions are used:
 
 - **First case of the day averages 91 min** with a 21.2% outlier rate. Duration drops steadily to 61 min by the 7th case, with 0% outlier rate for cases 5--7. This reflects setup overhead, equipment preparation, and a warm-up effect that dissipates through the day.
 
+### Model-based reassignment analysis
+
+- **Reassigning Dr. B's 14 global outliers to Dr. A would resolve all 14**, as Dr. A's procedural patterns produce lower outlier risk across all timing phases.
+
 ### Everyone is improving
 
 - All three physicians show a **negative learning curve slope** (Dr. A: --0.18 min/case, Dr. B: --0.28, Dr. C: --1.33), consistent with a procedural learning effect on the Varipulse device. Dr. C's steeper slope reflects a smaller sample (15 cases) in the early part of their learning curve.
@@ -155,26 +159,118 @@ Two complementary outlier definitions are used:
 4. **Schedule CTI cases strategically:** Given the 60% outlier rate, CTI cases should not be scheduled as the first case of the day (where setup overhead already adds time) or back-to-back with other complex cases.
 5. **Reduce first-case-of-day overhead:** The 91 min average for case #1 vs. 69 min for case #6 suggests that pre-procedural setup (room prep, equipment checks, team briefing) could be front-loaded before the patient arrives.
 
+### Notes
+
+- **Case 38:** Case 38 was performed by Dr. D substituting for Dr. B; attributed to Dr. B in the analysis.
+- **Case 57 (Dr. B, 204 min):** The longest case involved AAFL (atrial flutter ablation), an additional ablation target.
+- **Case 90 (Dr. C, 103 min):** Dr. C's single outlier is flagged as TROUBLESHOOT, indicating a technical issue rather than a procedural bottleneck.
+
+---
+
+## How It All Fits Together
+
+```
+┌─────────────────────────┐
+│   outlier_analysis.py   │  Step 1: Run the analysis pipeline
+│   (Python, ~1550 lines) │  Reads: Data/MSE433_M4_Data.xlsx
+└───────────┬─────────────┘  Writes: output/ (CSV, JSON, 17 PNGs)
+            │
+            ▼
+┌─────────────────────────────────────┐
+│   app/backend/                      │  Step 2: Export data for dashboard
+│   ├── export_dashboard_data.py      │  Reads: output/ + Data/
+│   ├── whatif_simulator.py           │  Writes: app/frontend/src/data/*.json
+│   └── reassignment_data.py         │
+└───────────┬─────────────────────────┘
+            │
+            ▼
+┌─────────────────────────────────────┐
+│   app/frontend/                     │  Step 3: Interactive dashboard
+│   React 19 + TypeScript + Vite      │  Imports: src/data/*.json (static)
+│   Tailwind CSS + Recharts           │  Serves: localhost:5173
+└─────────────────────────────────────┘
+```
+
+The backend scripts load the persisted LightGBM model and SHAP values from `output/model/`, then serialize everything as static JSON. The React dashboard imports these JSON files at build time — no running Python server is needed to view the dashboard.
+
 ---
 
 ## Setup
 
 ```bash
+# Python environment
 python3 -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
+
+# Frontend dependencies
+cd app/frontend
+npm install
+cd ../..
 ```
 
-Requires **Python 3.11+**. All dependencies are pinned in `requirements.txt`.
+Requires **Python 3.11+** and **Node.js 18+**.
 
 ## Run
 
+### Using Make (recommended)
+
 ```bash
-source venv/bin/activate
-python3 outlier_analysis.py
+make all        # Run analysis + generate dashboard data
+make serve      # Start dashboard dev server
+make clean      # Remove all generated files
 ```
 
-All outputs are written to the `output/` directory. The main human-readable report is `output/analysis_summary.md`.
+### Full pipeline (analysis + dashboard)
+
+```bash
+# 1. Run the analysis pipeline (generates output/)
+source venv/bin/activate
+python3 main.py              # modularized pipeline (preferred)
+# python3 outlier_analysis.py  # original monolithic script (same output)
+
+# 2. Generate dashboard data (reads output/, writes app/frontend/src/data/)
+python3 app/backend/export_dashboard_data.py
+python3 app/backend/whatif_simulator.py
+python3 app/backend/reassignment_data.py
+
+# 3. Start the interactive dashboard
+cd app/frontend
+npm run dev
+# Opens at http://localhost:5173
+```
+
+### Dashboard only (if output/ already exists)
+
+```bash
+cd app/frontend
+npm run dev
+```
+
+### Rebuild dashboard data (after re-running analysis)
+
+```bash
+source venv/bin/activate
+python3 app/backend/export_dashboard_data.py
+python3 app/backend/whatif_simulator.py
+python3 app/backend/reassignment_data.py
+```
+
+---
+
+## Dashboard Pages
+
+| Page | Description |
+|------|-------------|
+| **Overview** | Key metrics (145 cases, 10.3% outlier rate, 98.6 min threshold), distribution histogram, top findings |
+| **Physician Comparison** | Side-by-side stat cards, duration bar charts, radar chart of timing profiles, SHAP drivers per physician |
+| **SHAP Explorer** | Interactive feature importance bars, toggle Global/Dr A/Dr B models, clinical tooltips, click-to-detail |
+| **Outlier Deep Dive** | Sortable/filterable case table, expandable SHAP waterfall per case, physician and procedure type filters |
+| **What-If Simulator** | Adjust procedure parameters with sliders, real-time outlier probability gauge, preset scenarios, SHAP contributions. *The What-If Simulator shows model behavior under hypothetical parameter changes. It is a demonstration tool for exploring feature sensitivities, not a clinical prediction system.* |
+| **Reassignment** | Load any case, swap the physician, see outlier probability change. Batch reassignment scenarios and schedule optimizer to minimize total outliers. |
+| **Trends** | Learning curves per physician, scheduling effects scatter plot, case complexity outlier rates |
+
+---
 
 ## Output Directory Structure
 
@@ -209,14 +305,52 @@ output/
 
 ```
 MSE-433-Module-4/
-├── Background/                 # Course materials
-│   └── MSE433_M4_MedicalProcedure.pdf
-├── Data/                       # Raw dataset + definitions
+├── app/
+│   ├── frontend/                       # React 19 + TypeScript dashboard
+│   │   ├── src/
+│   │   │   ├── components/             # 8 page components + Layout
+│   │   │   │   ├── Layout.tsx
+│   │   │   │   ├── Overview.tsx
+│   │   │   │   ├── PhysicianComparison.tsx
+│   │   │   │   ├── ShapExplorer.tsx
+│   │   │   │   ├── OutlierDeepDive.tsx
+│   │   │   │   ├── WhatIfSimulator.tsx
+│   │   │   │   ├── PatientReassignment.tsx
+│   │   │   │   └── Trends.tsx
+│   │   │   ├── data/                   # Generated JSON (from backend scripts)
+│   │   │   │   ├── dashboard_data.json
+│   │   │   │   ├── whatif_data.json
+│   │   │   │   └── reassignment_data.json
+│   │   │   ├── types/index.ts          # TypeScript interfaces
+│   │   │   ├── App.tsx                 # Tab-based page router
+│   │   │   └── main.tsx                # Entry point
+│   │   ├── package.json
+│   │   └── vite.config.ts
+│   └── backend/                        # Python data export scripts
+│       ├── export_dashboard_data.py    # Generates dashboard_data.json
+│       ├── whatif_simulator.py         # Generates whatif_data.json
+│       └── reassignment_data.py       # Generates reassignment_data.json
+├── Data/                               # Raw dataset + definitions
 │   ├── MSE433_M4_Data.xlsx
 │   └── MSE433_M4_Definitions.pdf
-├── output/                     # Generated analysis outputs (gitignored)
-├── outlier_analysis.py         # Main analysis script
-├── requirements.txt            # Pinned Python dependencies
+├── Background/                         # Course materials
+│   └── MSE433_M4_MedicalProcedure.pdf
+├── src/                                # Modularized analysis pipeline (14 features)
+│   ├── config.py                       # Constants, paths, RANDOM_STATE=42
+│   ├── data_loader.py                  # Excel loading, cleaning (Phase 1)
+│   ├── eda.py                          # EDA, distribution plots (Phase 2)
+│   ├── feature_eng.py                  # Feature engineering (Phase 3)
+│   ├── model.py                        # LightGBM + SHAP (Phases 4-5)
+│   ├── per_physician.py                # Per-physician analysis (Phase 6)
+│   ├── additional.py                   # Learning curves, complexity (Phase 7)
+│   ├── export.py                       # CSV, JSON, markdown export (Phase 8)
+│   └── viz.py                          # Shared viz constants
+├── output/                             # Generated analysis outputs (gitignored)
+│   └── model/                          # Persisted LightGBM model (global_model.pkl)
+├── main.py                             # Entry point — runs src/ pipeline
+├── outlier_analysis.py                 # Original monolithic script (reference)
+├── Makefile                            # Build automation (make all/serve/clean)
+├── requirements.txt                    # Pinned Python dependencies
 ├── .gitignore
 └── README.md
 ```

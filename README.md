@@ -171,8 +171,8 @@ Two complementary outlier definitions are used:
 
 ```
 ┌─────────────────────────┐
-│   outlier_analysis.py   │  Step 1: Run the analysis pipeline
-│   (Python, ~1550 lines) │  Reads: Data/MSE433_M4_Data.xlsx
+│       main.py           │  Step 1: Run the analysis pipeline
+│   (modular src/ pipeline)│  Reads: Data/MSE433_M4_Data.xlsx
 └───────────┬─────────────┘  Writes: output/ (CSV, JSON, 17 PNGs)
             │
             ▼
@@ -197,21 +197,33 @@ The backend scripts load the persisted LightGBM model and SHAP values from `outp
 
 ## Setup
 
+Requires **Python 3.11+** and **Node.js 18+**.
+
 ```bash
-# Install uv (if not already installed)
+# Option A: using uv (recommended)
 curl -LsSf https://astral.sh/uv/install.sh | sh
+uv sync
 
-# Frontend dependencies
-cd app/frontend
-npm install
-cd ../..
+# Option B: using pip
+python3 -m venv venv
+source venv/bin/activate   # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+# Frontend dependencies (only needed for the dashboard)
+cd app/frontend && npm install && cd ../..
 ```
-
-Requires [**uv**](https://docs.astral.sh/uv/) and **Node.js 18+**. Python 3.11+ is resolved automatically by `uv`.
 
 ## Run
 
-### Using Make (recommended)
+```bash
+# Option A: using uv
+uv run main.py
+
+# Option B: using pip (with venv activated)
+python3 main.py
+```
+
+### Using Make
 
 ```bash
 make all        # Run analysis + generate dashboard data
@@ -223,33 +235,17 @@ make clean      # Remove all generated files
 
 ```bash
 # 1. Run the analysis pipeline (generates output/)
-uv run main.py              # modularized pipeline (preferred)
-# uv run outlier_analysis.py  # original monolithic script (same output)
+python3 main.py
 
 # 2. Generate dashboard data (reads output/, writes app/frontend/src/data/)
-uv run app/backend/export_dashboard_data.py
-uv run app/backend/whatif_simulator.py
-uv run app/backend/reassignment_data.py
+python3 app/backend/export_dashboard_data.py
+python3 app/backend/whatif_simulator.py
+python3 app/backend/reassignment_data.py
 
 # 3. Start the interactive dashboard
 cd app/frontend
 npm run dev
 # Opens at http://localhost:5173
-```
-
-### Dashboard only (if output/ already exists)
-
-```bash
-cd app/frontend
-npm run dev
-```
-
-### Rebuild dashboard data (after re-running analysis)
-
-```bash
-uv run app/backend/export_dashboard_data.py
-uv run app/backend/whatif_simulator.py
-uv run app/backend/reassignment_data.py
 ```
 
 ---
@@ -344,9 +340,9 @@ MSE-433-Module-4/
 ├── output/                             # Generated analysis outputs (gitignored)
 │   └── model/                          # Persisted LightGBM model (global_model.pkl)
 ├── main.py                             # Entry point — runs src/ pipeline
-├── outlier_analysis.py                 # Original monolithic script (reference)
 ├── Makefile                            # Build automation (make all/serve/clean)
-├── requirements.txt                    # Pinned Python dependencies
+├── requirements.txt                    # Python dependencies
+├── pyproject.toml                      # uv/pip project metadata
 ├── .gitignore
 └── README.md
 ```

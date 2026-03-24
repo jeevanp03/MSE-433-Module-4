@@ -1,14 +1,17 @@
 .PHONY: all analysis dashboard serve clean
 
+# Use uv if available, otherwise fall back to python3
+PYTHON := $(shell command -v uv >/dev/null 2>&1 && echo "uv run" || echo "python3")
+
 all: analysis dashboard
 
 analysis:
-	uv run main.py
+	$(PYTHON) main.py
 
 dashboard: analysis
-	uv run app/backend/export_dashboard_data.py
-	uv run app/backend/whatif_simulator.py
-	uv run app/backend/reassignment_data.py
+	$(PYTHON) app/backend/export_dashboard_data.py
+	$(PYTHON) app/backend/whatif_simulator.py
+	$(PYTHON) app/backend/reassignment_data.py
 
 serve:
 	cd app/frontend && npm run dev

@@ -198,10 +198,8 @@ The backend scripts load the persisted LightGBM model and SHAP values from `outp
 ## Setup
 
 ```bash
-# Python environment
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
 # Frontend dependencies
 cd app/frontend
@@ -209,7 +207,7 @@ npm install
 cd ../..
 ```
 
-Requires **Python 3.11+** and **Node.js 18+**.
+Requires [**uv**](https://docs.astral.sh/uv/) and **Node.js 18+**. Python 3.11+ is resolved automatically by `uv`.
 
 ## Run
 
@@ -225,14 +223,13 @@ make clean      # Remove all generated files
 
 ```bash
 # 1. Run the analysis pipeline (generates output/)
-source venv/bin/activate
-python3 main.py              # modularized pipeline (preferred)
-# python3 outlier_analysis.py  # original monolithic script (same output)
+uv run main.py              # modularized pipeline (preferred)
+# uv run outlier_analysis.py  # original monolithic script (same output)
 
 # 2. Generate dashboard data (reads output/, writes app/frontend/src/data/)
-python3 app/backend/export_dashboard_data.py
-python3 app/backend/whatif_simulator.py
-python3 app/backend/reassignment_data.py
+uv run app/backend/export_dashboard_data.py
+uv run app/backend/whatif_simulator.py
+uv run app/backend/reassignment_data.py
 
 # 3. Start the interactive dashboard
 cd app/frontend
@@ -250,10 +247,9 @@ npm run dev
 ### Rebuild dashboard data (after re-running analysis)
 
 ```bash
-source venv/bin/activate
-python3 app/backend/export_dashboard_data.py
-python3 app/backend/whatif_simulator.py
-python3 app/backend/reassignment_data.py
+uv run app/backend/export_dashboard_data.py
+uv run app/backend/whatif_simulator.py
+uv run app/backend/reassignment_data.py
 ```
 
 ---

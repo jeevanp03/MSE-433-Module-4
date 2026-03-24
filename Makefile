@@ -3,12 +3,12 @@
 all: analysis dashboard
 
 analysis:
-	source venv/bin/activate && python3 main.py
+	uv run main.py
 
 dashboard: analysis
-	source venv/bin/activate && python3 app/backend/export_dashboard_data.py
-	source venv/bin/activate && python3 app/backend/whatif_simulator.py
-	source venv/bin/activate && python3 app/backend/reassignment_data.py
+	uv run app/backend/export_dashboard_data.py
+	uv run app/backend/whatif_simulator.py
+	uv run app/backend/reassignment_data.py
 
 serve:
 	cd app/frontend && npm run dev

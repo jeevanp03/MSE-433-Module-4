@@ -1,5 +1,6 @@
 # Virtual environment
 venv/
+.venv/
 
 # Python
 __pycache__/
@@ -28,7 +29,6 @@ app/frontend/src/data/*.json
 
 # Course materials (not redistributable)
 Background/
-Data/
 
 # Claude Code internals
 CLAUDE.md

@@ -90,6 +90,11 @@ def run_eda(df: pd.DataFrame) -> float:
     print(f"Final class distribution:")
     print(df["outlier_class"].value_counts().sort_index())
 
+    # Print outlier case numbers
+    outlier_cases = df[df["outlier_class"] == 1].sort_values(TARGET_COL, ascending=False)
+    case_nums = outlier_cases["CASE #"].astype(int).tolist()
+    print(f"\nOutlier case numbers: {case_nums}")
+
     # --- 2d. Visualize outlier classes ---
     class_labels = CLASS_LABELS
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))

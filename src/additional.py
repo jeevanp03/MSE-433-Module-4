@@ -1,5 +1,6 @@
 """
-Phase 7: Additional analyses - learning curves, complexity, scheduling, severity profiles.
+Phase 7: Additional analyses - learning curves, complexity, severity profiles,
+prep time variability, and repositioning efficiency.
 """
 
 from typing import Dict, List
@@ -7,6 +8,7 @@ from typing import Dict, List
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from scipy import stats
 
 from src.config import EXTRA_DIR, TARGET_COL
 from src.viz import PHYS_COLORS, SAVE_DPI
@@ -27,14 +29,16 @@ def run_additional_analyses(
 
     learning_curve_results = _learning_curve(df, physicians)
     complexity_stats = _case_complexity(df)
-    scheduling_results = _case_scheduling(df)
     severity_results = _physician_severity(df, physicians)
+    prep_time_results = _prep_time_variability(df, physicians)
+    repo_results = _repositioning_efficiency(df, physicians)
 
     return {
         "learning_curve": learning_curve_results,
         "case_complexity": complexity_stats,
-        "scheduling": scheduling_results,
         "physician_severity": severity_results,
+        "prep_time": prep_time_results,
+        "repositioning": repo_results,
     }
 
 
@@ -151,58 +155,6 @@ def _case_complexity(df: pd.DataFrame) -> Dict:
     print("Saved: case_complexity.png")
 
     return complexity_stats
-
-
-def _case_scheduling(df: pd.DataFrame) -> Dict:
-    """7c. Day-of scheduling / case order analysis."""
-    print("\n--- 7c. Case Order / Scheduling Analysis ---")
-
-    fig, axes = plt.subplots(1, 2, figsize=(14, 6))
-    fig.suptitle("Day-of Scheduling: Effect of Case Order on Procedure Duration", fontsize=14, fontweight="bold")
-
-    df_sched = df.dropna(subset=["CASE_ORDER_IN_DAY", TARGET_COL])
-    case_order_groups = df_sched.groupby("CASE_ORDER_IN_DAY")[TARGET_COL]
-    orders = sorted(df_sched["CASE_ORDER_IN_DAY"].dropna().unique().astype(int))
-    order_means = [case_order_groups.get_group(o).mean() for o in orders]
-    order_counts = [len(case_order_groups.get_group(o)) for o in orders]
-
-    ax = axes[0]
-    ax.bar(orders, order_means, color="steelblue", alpha=0.7, edgecolor="black")
-    for i, (mean, count) in enumerate(zip(order_means, order_counts)):
-        ax.text(orders[i], mean + 1, f"{mean:.0f}\n(n={count})", ha="center", fontsize=8)
-    ax.set_xlabel("Case Position in Daily Schedule")
-    ax.set_ylabel("Average Duration (minutes)")
-    ax.set_title("Average Procedure Duration by Daily Case Order")
-    ax.set_xticks(orders)
-
-    order_outlier_rates = [df_sched[df_sched["CASE_ORDER_IN_DAY"] == o]["outlier_class"].mean() * 100 for o in orders]
-    ax = axes[1]
-    ax.bar(orders, order_outlier_rates, color="orange", alpha=0.7, edgecolor="black")
-    for i, rate in enumerate(order_outlier_rates):
-        ax.text(orders[i], rate + 0.5, f"{rate:.1f}%", ha="center", fontsize=8)
-    ax.set_xlabel("Case Position in Daily Schedule")
-    ax.set_ylabel("Outlier Rate (%)")
-    ax.set_title("Outlier Rate by Daily Case Order")
-    ax.set_xticks(orders)
-
-    scheduling_results = {
-        "case_order_stats": {
-            int(o): {
-                "n_cases": int(c),
-                "mean_duration": round(float(m), 1),
-                "outlier_rate_pct": round(float(r), 1),
-            }
-            for o, c, m, r in zip(orders, order_counts, order_means, order_outlier_rates)
-        }
-    }
-    print(f"  Case order vs mean duration: {', '.join(f'{o}={m:.0f}min' for o, m in zip(orders, order_means))}")
-
-    plt.tight_layout()
-    plt.savefig(f"{EXTRA_DIR}/case_order_scheduling.png", dpi=SAVE_DPI, bbox_inches="tight")
-    plt.close()
-    print("Saved: case_order_scheduling.png")
-
-    return scheduling_results
 
 
 def _physician_severity(df: pd.DataFrame, physicians: list) -> Dict:
@@ -345,3 +297,308 @@ def _physician_severity(df: pd.DataFrame, physicians: list) -> Dict:
     print("Saved: physician_severity_profile.png")
 
     return severity_results
+
+
+def _prep_time_variability(df: pd.DataFrame, physicians: list) -> Dict:
+    """7e. Deep dive into PT PREP/INTUBATION variability and its link to PT IN-OUT."""
+    print("\n--- 7e. Prep Time (PT PREP/INTUBATION) Variability Deep Dive ---")
+
+    prep_col = "PT PREP/INTUBATION"
+    df_valid = df.dropna(subset=[prep_col, TARGET_COL])
+
+    # Global stats
+    r_global, p_global = stats.pearsonr(df_valid[prep_col], df_valid[TARGET_COL])
+    r2_global = r_global ** 2
+    print(f"  Correlation with PT IN-OUT: r={r_global:.3f} (R²={r2_global:.3f}, p={p_global:.4f})")
+
+    outlier = df_valid[df_valid["outlier_class"] == 1]
+    normal = df_valid[df_valid["outlier_class"] == 0]
+    print(f"  Outlier mean prep: {outlier[prep_col].mean():.1f} min vs Normal: {normal[prep_col].mean():.1f} min "
+          f"(+{outlier[prep_col].mean() - normal[prep_col].mean():.1f} min)")
+
+    # Per-physician stats
+    phys_prep_stats = {}
+    for phys in physicians:
+        sub = df_valid[df_valid["PHYSICIAN"] == phys]
+        prep = sub[prep_col]
+        sub_out = sub[sub["outlier_class"] == 1]
+        sub_norm = sub[sub["outlier_class"] == 0]
+        r_phys, p_phys = stats.pearsonr(sub[prep_col], sub[TARGET_COL]) if len(sub) > 2 else (0, 1)
+        phys_prep_stats[phys] = {
+            "n": int(len(sub)),
+            "mean": round(float(prep.mean()), 1),
+            "median": round(float(prep.median()), 1),
+            "std": round(float(prep.std()), 1),
+            "cv_pct": round(float(prep.std() / prep.mean() * 100), 1) if prep.mean() > 0 else 0,
+            "min": round(float(prep.min()), 1),
+            "max": round(float(prep.max()), 1),
+            "outlier_mean": round(float(sub_out[prep_col].mean()), 1) if len(sub_out) > 0 else None,
+            "normal_mean": round(float(sub_norm[prep_col].mean()), 1) if len(sub_norm) > 0 else None,
+            "r_with_pt_inout": round(float(r_phys), 3),
+            "p_with_pt_inout": round(float(p_phys), 4),
+        }
+        s = phys_prep_stats[phys]
+        print(f"  {phys}: mean={s['mean']}, std={s['std']}, CV={s['cv_pct']}%, "
+              f"range=[{s['min']}-{s['max']}], r={s['r_with_pt_inout']:.3f}")
+
+    # Prep time by procedure type
+    proc_flags = {
+        "Standard PFA": ~df_valid["HAS_NOTE"] | (df_valid["Note"].astype(str).str.strip() == ""),
+        "CTI": df_valid["NOTE_CTI"] == 1,
+        "BOX/PST BOX": (df_valid["NOTE_BOX"] == 1) | (df_valid["NOTE_PST"] == 1),
+    }
+    prep_by_type = {}
+    for label, mask in proc_flags.items():
+        vals = df_valid.loc[mask, prep_col].dropna()
+        if len(vals) > 0:
+            prep_by_type[label] = {
+                "n": int(len(vals)),
+                "mean": round(float(vals.mean()), 1),
+                "std": round(float(vals.std()), 1),
+            }
+
+    # === Figure: 2x2 prep time deep dive ===
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    fig.suptitle("PT PREP/INTUBATION: Variability Deep Dive", fontsize=15, fontweight="bold")
+
+    # (0,0) Distribution by physician
+    ax = axes[0, 0]
+    for phys in physicians:
+        sub = df_valid[df_valid["PHYSICIAN"] == phys][prep_col]
+        ax.hist(sub, bins=15, alpha=0.5, label=f"{phys} (n={len(sub)}, μ={sub.mean():.1f})",
+                color=PHYS_COLORS.get(phys, "gray"), edgecolor="black")
+    ax.set_xlabel("PT PREP/INTUBATION (minutes)")
+    ax.set_ylabel("Number of Cases")
+    ax.set_title("Prep Time Distribution by Physician")
+    ax.legend(fontsize=8)
+
+    # (0,1) Scatter: Prep time vs PT IN-OUT colored by physician
+    ax = axes[0, 1]
+    for phys in physicians:
+        sub = df_valid[df_valid["PHYSICIAN"] == phys]
+        ax.scatter(sub[prep_col], sub[TARGET_COL], alpha=0.5,
+                   color=PHYS_COLORS.get(phys, "gray"), edgecolor="black", s=40, label=phys)
+    # Outliers marked with red ring
+    ax.scatter(outlier[prep_col], outlier[TARGET_COL], facecolors="none",
+               edgecolors="red", s=120, linewidths=2, label="Outlier case", zorder=5)
+    # Regression line
+    z = np.polyfit(df_valid[prep_col], df_valid[TARGET_COL], 1)
+    x_line = np.linspace(df_valid[prep_col].min(), df_valid[prep_col].max(), 50)
+    ax.plot(x_line, np.poly1d(z)(x_line), "r--", linewidth=2,
+            label=f"r={r_global:.3f}, R²={r2_global:.1%}")
+    ax.set_xlabel("PT PREP/INTUBATION (minutes)")
+    ax.set_ylabel("PT IN-OUT (minutes)")
+    ax.set_title("Prep Time vs Total Duration (with Outliers)")
+    ax.legend(fontsize=7)
+
+    # (1,0) Boxplot: Outlier vs Normal prep time by physician
+    ax = axes[1, 0]
+    positions = []
+    box_data = []
+    box_colors = []
+    tick_labels = []
+    for i, phys in enumerate(physicians):
+        sub_norm = df_valid[(df_valid["PHYSICIAN"] == phys) & (df_valid["outlier_class"] == 0)][prep_col]
+        sub_out = df_valid[(df_valid["PHYSICIAN"] == phys) & (df_valid["outlier_class"] == 1)][prep_col]
+        if len(sub_norm) > 0:
+            box_data.append(sub_norm.values)
+            positions.append(i * 3)
+            box_colors.append(PHYS_COLORS.get(phys, "gray"))
+            tick_labels.append(f"{phys}\nNormal (n={len(sub_norm)})")
+        if len(sub_out) > 0:
+            box_data.append(sub_out.values)
+            positions.append(i * 3 + 1)
+            box_colors.append("red")
+            tick_labels.append(f"{phys}\nOutlier (n={len(sub_out)})")
+    bp = ax.boxplot(box_data, positions=positions, patch_artist=True, widths=0.7)
+    for patch, color in zip(bp["boxes"], box_colors):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.5)
+    ax.set_xticks(positions)
+    ax.set_xticklabels(tick_labels, fontsize=7)
+    ax.set_ylabel("PT PREP/INTUBATION (minutes)")
+    ax.set_title("Prep Time: Normal vs Outlier Cases by Physician")
+
+    # (1,1) Prep time trend over time per physician
+    ax = axes[1, 1]
+    for phys in physicians:
+        sub = df_valid[df_valid["PHYSICIAN"] == phys].sort_values("DATE").reset_index(drop=True)
+        case_seq = np.arange(1, len(sub) + 1)
+        prep_vals = sub[prep_col].values
+        ax.scatter(case_seq, prep_vals, alpha=0.4, color=PHYS_COLORS.get(phys, "gray"),
+                   edgecolor="black", s=25)
+        mask = ~np.isnan(prep_vals)
+        if mask.sum() > 2:
+            z_trend = np.polyfit(case_seq[mask], prep_vals[mask], 1)
+            ax.plot(case_seq, np.poly1d(z_trend)(case_seq), color=PHYS_COLORS.get(phys, "gray"),
+                    linewidth=2, label=f"{phys} ({z_trend[0]:+.2f} min/case)")
+    ax.set_xlabel("Case Number (Chronological per Physician)")
+    ax.set_ylabel("PT PREP/INTUBATION (minutes)")
+    ax.set_title("Prep Time Trend Over Time")
+    ax.legend(fontsize=8)
+
+    plt.tight_layout()
+    plt.savefig(f"{EXTRA_DIR}/prep_time_deep_dive.png", dpi=SAVE_DPI, bbox_inches="tight")
+    plt.close()
+    print("Saved: prep_time_deep_dive.png")
+
+    return {
+        "global_r": round(float(r_global), 3),
+        "global_r2_pct": round(float(r2_global * 100), 1),
+        "global_p": round(float(p_global), 6),
+        "outlier_mean": round(float(outlier[prep_col].mean()), 1),
+        "normal_mean": round(float(normal[prep_col].mean()), 1),
+        "diff_min": round(float(outlier[prep_col].mean() - normal[prep_col].mean()), 1),
+        "per_physician": phys_prep_stats,
+        "by_procedure_type": prep_by_type,
+    }
+
+
+def _repositioning_efficiency(df: pd.DataFrame, physicians: list) -> Dict:
+    """7f. Deep dive into catheter repositioning time (ABL DURATION - ABL TIME)."""
+    print("\n--- 7f. Catheter Repositioning Efficiency Deep Dive ---")
+
+    df_valid = df.dropna(subset=["ABL DURATION", "ABL TIME", TARGET_COL]).copy()
+    df_valid["REPO_TIME"] = df_valid["ABL DURATION"] - df_valid["ABL TIME"]
+
+    # Global correlation
+    r_repo, p_repo = stats.pearsonr(df_valid["REPO_TIME"], df_valid[TARGET_COL])
+    r_abl_dur, _ = stats.pearsonr(df_valid["ABL DURATION"], df_valid[TARGET_COL])
+    r_abl_time, _ = stats.pearsonr(df_valid["ABL TIME"], df_valid[TARGET_COL])
+    print(f"  Correlation with PT IN-OUT:")
+    print(f"    ABL DURATION (total):     r={r_abl_dur:.3f} (R²={r_abl_dur**2:.1%})")
+    print(f"    Repositioning time:       r={r_repo:.3f} (R²={r_repo**2:.1%})")
+    print(f"    ABL TIME (pulse-on only): r={r_abl_time:.3f} (R²={r_abl_time**2:.1%})")
+    print(f"  -> Repositioning (not pulse-on) drives ABL DURATION's correlation with PT IN-OUT")
+
+    outlier = df_valid[df_valid["outlier_class"] == 1]
+    normal = df_valid[df_valid["outlier_class"] == 0]
+    print(f"  Outlier mean repo: {outlier['REPO_TIME'].mean():.1f} min vs Normal: {normal['REPO_TIME'].mean():.1f} min "
+          f"(+{outlier['REPO_TIME'].mean() - normal['REPO_TIME'].mean():.1f} min)")
+
+    # Per-physician stats
+    phys_repo_stats = {}
+    for phys in physicians:
+        sub = df_valid[df_valid["PHYSICIAN"] == phys]
+        repo = sub["REPO_TIME"]
+        sub_out = sub[sub["outlier_class"] == 1]
+        sub_norm = sub[sub["outlier_class"] == 0]
+        r_phys, p_phys = stats.pearsonr(sub["REPO_TIME"], sub[TARGET_COL]) if len(sub) > 2 else (0, 1)
+        # Repositioning per ablation site
+        repo_per_site = repo / sub["#ABL"]
+        phys_repo_stats[phys] = {
+            "n": int(len(sub)),
+            "mean": round(float(repo.mean()), 1),
+            "median": round(float(repo.median()), 1),
+            "std": round(float(repo.std()), 1),
+            "cv_pct": round(float(repo.std() / repo.mean() * 100), 1) if repo.mean() > 0 else 0,
+            "outlier_mean": round(float(sub_out["REPO_TIME"].mean()), 1) if len(sub_out) > 0 else None,
+            "normal_mean": round(float(sub_norm["REPO_TIME"].mean()), 1) if len(sub_norm) > 0 else None,
+            "repo_per_site_mean": round(float(repo_per_site.mean()), 2),
+            "repo_per_site_std": round(float(repo_per_site.std()), 2),
+            "r_with_pt_inout": round(float(r_phys), 3),
+        }
+        s = phys_repo_stats[phys]
+        print(f"  {phys}: mean={s['mean']} min, std={s['std']}, CV={s['cv_pct']}%, "
+              f"per-site={s['repo_per_site_mean']:.2f} min/site, r={s['r_with_pt_inout']:.3f}")
+
+    # Correlation: repo time vs #ABL (does more sites = proportionally more repo time?)
+    r_sites, p_sites = stats.pearsonr(df_valid["#ABL"], df_valid["REPO_TIME"])
+    print(f"  #ABL vs Repositioning time: r={r_sites:.3f}, p={p_sites:.4f}")
+
+    # === Figure: 2x2 repositioning deep dive ===
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    fig.suptitle("Catheter Repositioning Efficiency Deep Dive\n(Repositioning = ABL DURATION - ABL TIME)",
+                 fontsize=14, fontweight="bold")
+
+    # (0,0) Scatter: Repositioning time vs PT IN-OUT
+    ax = axes[0, 0]
+    for phys in physicians:
+        sub = df_valid[df_valid["PHYSICIAN"] == phys]
+        ax.scatter(sub["REPO_TIME"], sub[TARGET_COL], alpha=0.5,
+                   color=PHYS_COLORS.get(phys, "gray"), edgecolor="black", s=40, label=phys)
+    ax.scatter(outlier["REPO_TIME"], outlier[TARGET_COL], facecolors="none",
+               edgecolors="red", s=120, linewidths=2, label="Outlier case", zorder=5)
+    z = np.polyfit(df_valid["REPO_TIME"], df_valid[TARGET_COL], 1)
+    x_line = np.linspace(df_valid["REPO_TIME"].min(), df_valid["REPO_TIME"].max(), 50)
+    ax.plot(x_line, np.poly1d(z)(x_line), "r--", linewidth=2,
+            label=f"r={r_repo:.3f}, R²={r_repo**2:.1%}")
+    ax.set_xlabel("Repositioning Time (minutes)")
+    ax.set_ylabel("PT IN-OUT (minutes)")
+    ax.set_title("Repositioning Time vs Total Duration")
+    ax.legend(fontsize=7)
+
+    # (0,1) Scatter: #ABL vs Repositioning time (efficiency)
+    ax = axes[0, 1]
+    for phys in physicians:
+        sub = df_valid[df_valid["PHYSICIAN"] == phys]
+        ax.scatter(sub["#ABL"], sub["REPO_TIME"], alpha=0.5,
+                   color=PHYS_COLORS.get(phys, "gray"), edgecolor="black", s=40, label=phys)
+    z2 = np.polyfit(df_valid["#ABL"], df_valid["REPO_TIME"], 1)
+    x_abl = np.linspace(df_valid["#ABL"].min(), df_valid["#ABL"].max(), 50)
+    ax.plot(x_abl, np.poly1d(z2)(x_abl), "r--", linewidth=2,
+            label=f"r={r_sites:.3f} ({z2[0]:+.2f} min/site)")
+    ax.set_xlabel("Number of Ablation Sites (#ABL)")
+    ax.set_ylabel("Repositioning Time (minutes)")
+    ax.set_title("Do More Sites = More Repositioning Time?")
+    ax.legend(fontsize=8)
+
+    # (1,0) Boxplot: Repositioning time by physician (normal vs outlier)
+    ax = axes[1, 0]
+    positions = []
+    box_data = []
+    box_colors = []
+    tick_labels = []
+    for i, phys in enumerate(physicians):
+        sub_norm = df_valid[(df_valid["PHYSICIAN"] == phys) & (df_valid["outlier_class"] == 0)]["REPO_TIME"]
+        sub_out = df_valid[(df_valid["PHYSICIAN"] == phys) & (df_valid["outlier_class"] == 1)]["REPO_TIME"]
+        if len(sub_norm) > 0:
+            box_data.append(sub_norm.values)
+            positions.append(i * 3)
+            box_colors.append(PHYS_COLORS.get(phys, "gray"))
+            tick_labels.append(f"{phys}\nNormal (n={len(sub_norm)})")
+        if len(sub_out) > 0:
+            box_data.append(sub_out.values)
+            positions.append(i * 3 + 1)
+            box_colors.append("red")
+            tick_labels.append(f"{phys}\nOutlier (n={len(sub_out)})")
+    bp = ax.boxplot(box_data, positions=positions, patch_artist=True, widths=0.7)
+    for patch, color in zip(bp["boxes"], box_colors):
+        patch.set_facecolor(color)
+        patch.set_alpha(0.5)
+    ax.set_xticks(positions)
+    ax.set_xticklabels(tick_labels, fontsize=7)
+    ax.set_ylabel("Repositioning Time (minutes)")
+    ax.set_title("Repositioning Time: Normal vs Outlier by Physician")
+
+    # (1,1) Per-site repositioning efficiency by physician
+    ax = axes[1, 1]
+    x_pos = np.arange(len(physicians))
+    bar_colors = [PHYS_COLORS.get(p, "gray") for p in physicians]
+    means = [phys_repo_stats[p]["repo_per_site_mean"] for p in physicians]
+    stds = [phys_repo_stats[p]["repo_per_site_std"] for p in physicians]
+    ax.bar(x_pos, means, 0.5, yerr=stds, color=bar_colors, alpha=0.7, edgecolor="black",
+           capsize=5, error_kw={"linewidth": 1.5})
+    for i, (m, s) in enumerate(zip(means, stds)):
+        ax.text(i, m + s + 0.02, f"{m:.2f}±{s:.2f}", ha="center", fontsize=9, fontweight="bold")
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(physicians)
+    ax.set_ylabel("Minutes per Ablation Site")
+    ax.set_title("Repositioning Efficiency: Time per Ablation Site")
+
+    plt.tight_layout()
+    plt.savefig(f"{EXTRA_DIR}/repositioning_deep_dive.png", dpi=SAVE_DPI, bbox_inches="tight")
+    plt.close()
+    print("Saved: repositioning_deep_dive.png")
+
+    return {
+        "global_r": round(float(r_repo), 3),
+        "global_r2_pct": round(float(r_repo ** 2 * 100), 1),
+        "abl_duration_r": round(float(r_abl_dur), 3),
+        "abl_time_r": round(float(r_abl_time), 3),
+        "outlier_mean": round(float(outlier["REPO_TIME"].mean()), 1),
+        "normal_mean": round(float(normal["REPO_TIME"].mean()), 1),
+        "diff_min": round(float(outlier["REPO_TIME"].mean() - normal["REPO_TIME"].mean()), 1),
+        "sites_vs_repo_r": round(float(r_sites), 3),
+        "per_physician": phys_repo_stats,
+    }

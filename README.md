@@ -82,16 +82,15 @@ Two complementary outlier definitions are used:
 
 ### 4. Feature Engineering
 
-14 features in total:
+13 features in total:
 
 | Category | Features | Count |
 |---|---|---:|
 | Granular procedural timings | PT PREP/INTUBATION, ACCESS, TSP, PRE-MAP, ABL DURATION, ABL TIME, #ABL, POST CARE/EXTUBATION | 8 |
 | Physician encoding | Physician identifier (label-encoded) | 1 |
 | Note-derived binary flags | CTI, BOX, PST, SVC (additional procedures performed) | 4 |
-| Scheduling | Case order within the day (1st, 2nd, 3rd, ...) | 1 |
 
-**Excluded:** CASE TIME, SKIN-SKIN, LA DWELL TIME (aggregate sub-totals that leak the target). #APPLICATIONS excluded — deterministic function of #ABL (always 3x per protocol, r=1.0 correlation).
+**Excluded:** CASE TIME, SKIN-SKIN, LA DWELL TIME (aggregate sub-totals that leak the target). #APPLICATIONS excluded — deterministic function of #ABL (always 3x per protocol, r=1.0 correlation). CASE_ORDER_IN_DAY excluded — single lab with one doctor at a time makes scheduling analysis non-actionable.
 
 ### 5. LightGBM Classification
 
@@ -111,7 +110,8 @@ Two complementary outlier definitions are used:
 
 - **Learning curve:** Linear trendline and 10-case rolling average of `PT IN-OUT` over case sequence, per physician.
 - **Case complexity:** Outlier rates broken down by additional procedure flags (CTI, BOX, PST BOX, SVC).
-- **Day-of scheduling:** Mean duration and outlier rate by case position in the daily schedule.
+- **PT PREP/INTUBATION deep dive:** Distribution by physician, correlation with PT IN-OUT (r=0.621, R²=38.6%), outlier vs normal comparison, trends over time, breakdown by procedure type. Dr. B shows highest variability (CV=30.5%, range 10--48 min).
+- **Catheter repositioning deep dive:** ABL DURATION decomposed into pulse-on time (ABL TIME) and repositioning time. Repositioning is the strongest single correlate with PT IN-OUT (r=0.746). Per-site efficiency compared across physicians (Dr. B: 0.92 min/site vs Dr. A: 0.67 min/site). #ABL vs repositioning is weak (r=0.326), confirming technique-driven variability.
 
 ---
 
@@ -139,13 +139,17 @@ Two complementary outlier definitions are used:
 
 - **CTI (cavo-tricuspid isthmus) procedures carry a 60% outlier rate** vs. 7.4% for standard PVI-only cases. Adding a CTI ablation target nearly guarantees a long case. PST BOX procedures also elevate risk (14.3% outlier rate).
 
-### Scheduling position matters
+### Prep time is the 2nd largest source of variability
 
-- **First case of the day averages 91 min** with a 21.2% outlier rate. Duration drops steadily to 61 min by the 7th case, with 0% outlier rate for cases 5--7. This reflects setup overhead, equipment preparation, and a warm-up effect that dissipates through the day.
+- **PT PREP/INTUBATION correlates r=0.621 with PT IN-OUT** (R²=38.6%). Outlier cases average 25.2 min prep vs 18.5 min for normal (+6.7 min). Dr. B's prep time is the most variable (CV=30.5%, range 10--48 min) compared to Dr. A (CV=20.7%, range 10--26 min).
 
-### Model-based reassignment analysis
+### Catheter repositioning is the single strongest driver
 
-- **Reassigning Dr. B's 14 global outliers to Dr. A would resolve all 14**, as Dr. A's procedural patterns produce lower outlier risk across all timing phases.
+- **Repositioning time (ABL DURATION minus ABL TIME) correlates r=0.746 with PT IN-OUT** — stronger than any raw feature. ABL TIME (pulse-on) is only r=0.208, confirming the variability in ablation duration comes from catheter movement, not energy delivery. Dr. B averages 0.92 min/site vs Dr. A's 0.67 min/site (37% efficiency gap). #ABL vs repositioning is weak (r=0.326), confirming this is technique-driven, not complexity-driven.
+
+### Patient demographics are missing
+
+- The dataset contains no patient weight, BMI, age, or other demographics. These factors likely affect vascular access, intubation, and catheter manipulation — the high-variability phases. Prospective collection recommended.
 
 ### Everyone is improving
 
@@ -153,11 +157,11 @@ Two complementary outlier definitions are used:
 
 ### Actionable recommendations
 
-1. **ABL DURATION for Dr. B:** Investigate catheter repositioning workflow. ABL TIME is constant, so the energy delivery protocol is not the issue -- it is the mechanical movement between sites.
-2. **PT PREP/INTUBATION for Dr. A:** Standardize patient setup and anesthesia induction. This is Dr. A's primary bottleneck.
+1. **ABL DURATION for Dr. B:** Investigate catheter repositioning workflow. ABL TIME is constant, so the energy delivery protocol is not the issue -- it is the mechanical movement between sites. Dr. B takes 0.92 min/site vs Dr. A's 0.67 min/site.
+2. **PT PREP/INTUBATION standardization:** Reduce variability in patient setup and anesthesia induction. This is Dr. A's primary bottleneck and the 2nd largest source of variability globally (r=0.621 with PT IN-OUT). Dr. B's range (10--48 min) suggests inconsistent processes.
 3. **TSP and PRE-MAP globally:** Extended transseptal puncture and mapping times are strong outlier predictors. Protocols to streamline these phases (e.g., pre-procedure imaging, standardized puncture technique) could reduce duration across all physicians.
-4. **Schedule CTI cases strategically:** Given the 60% outlier rate, CTI cases should not be scheduled as the first case of the day (where setup overhead already adds time) or back-to-back with other complex cases.
-5. **Reduce first-case-of-day overhead:** The 91 min average for case #1 vs. 69 min for case #6 suggests that pre-procedural setup (room prep, equipment checks, team briefing) could be front-loaded before the patient arrives.
+4. **CTI case awareness:** Given the 60% outlier rate for CTI cases, teams should anticipate longer durations and plan accordingly.
+5. **Track patient weight/BMI:** The dataset has no patient demographics. Weight and BMI are known to affect vascular access, intubation, and catheter manipulation — exactly the high-variability phases. Prospective collection would disentangle patient-driven complexity from procedural inefficiency.
 
 ### Notes
 
@@ -179,8 +183,7 @@ Two complementary outlier definitions are used:
 ┌─────────────────────────────────────┐
 │   app/backend/                      │  Step 2: Export data for dashboard
 │   ├── export_dashboard_data.py      │  Reads: output/ + Data/
-│   ├── whatif_simulator.py           │  Writes: app/frontend/src/data/*.json
-│   └── reassignment_data.py         │
+│   └── whatif_simulator.py           │  Writes: app/frontend/src/data/*.json
 └───────────┬─────────────────────────┘
             │
             ▼
@@ -240,7 +243,6 @@ python3 main.py
 # 2. Generate dashboard data (reads output/, writes app/frontend/src/data/)
 python3 app/backend/export_dashboard_data.py
 python3 app/backend/whatif_simulator.py
-python3 app/backend/reassignment_data.py
 
 # 3. Start the interactive dashboard
 cd app/frontend
@@ -259,8 +261,7 @@ npm run dev
 | **SHAP Explorer** | Interactive feature importance bars, toggle Global/Dr A/Dr B models, clinical tooltips, click-to-detail |
 | **Outlier Deep Dive** | Sortable/filterable case table, expandable SHAP waterfall per case, physician and procedure type filters |
 | **What-If Simulator** | Adjust procedure parameters with sliders, real-time outlier probability gauge, preset scenarios, SHAP contributions. *The What-If Simulator shows model behavior under hypothetical parameter changes. It is a demonstration tool for exploring feature sensitivities, not a clinical prediction system.* |
-| **Reassignment** | Load any case, swap the physician, see outlier probability change. Batch reassignment scenarios and schedule optimizer to minimize total outliers. |
-| **Trends** | Learning curves per physician, scheduling effects scatter plot, case complexity outlier rates |
+| **Trends** | Learning curves per physician, case complexity outlier rates |
 
 ---
 
@@ -289,8 +290,9 @@ output/
 └── additional/                         # Supplementary analyses
     ├── learning_curve.png
     ├── case_complexity.png
-    ├── case_order_scheduling.png
-    └── physician_severity_profile.png
+    ├── physician_severity_profile.png
+    ├── prep_time_deep_dive.png
+    └── repositioning_deep_dive.png
 ```
 
 ## Project Structure
@@ -300,19 +302,17 @@ MSE-433-Module-4/
 ├── app/
 │   ├── frontend/                       # React 19 + TypeScript dashboard
 │   │   ├── src/
-│   │   │   ├── components/             # 8 page components + Layout
+│   │   │   ├── components/             # Page components + Layout
 │   │   │   │   ├── Layout.tsx
 │   │   │   │   ├── Overview.tsx
 │   │   │   │   ├── PhysicianComparison.tsx
 │   │   │   │   ├── ShapExplorer.tsx
 │   │   │   │   ├── OutlierDeepDive.tsx
 │   │   │   │   ├── WhatIfSimulator.tsx
-│   │   │   │   ├── PatientReassignment.tsx
 │   │   │   │   └── Trends.tsx
 │   │   │   ├── data/                   # Generated JSON (from backend scripts)
 │   │   │   │   ├── dashboard_data.json
-│   │   │   │   ├── whatif_data.json
-│   │   │   │   └── reassignment_data.json
+│   │   │   │   └── whatif_data.json
 │   │   │   ├── types/index.ts          # TypeScript interfaces
 │   │   │   ├── App.tsx                 # Tab-based page router
 │   │   │   └── main.tsx                # Entry point
@@ -320,14 +320,13 @@ MSE-433-Module-4/
 │   │   └── vite.config.ts
 │   └── backend/                        # Python data export scripts
 │       ├── export_dashboard_data.py    # Generates dashboard_data.json
-│       ├── whatif_simulator.py         # Generates whatif_data.json
-│       └── reassignment_data.py       # Generates reassignment_data.json
+│       └── whatif_simulator.py         # Generates whatif_data.json
 ├── Data/                               # Raw dataset + definitions
 │   ├── MSE433_M4_Data.xlsx
 │   └── MSE433_M4_Definitions.pdf
 ├── Background/                         # Course materials
 │   └── MSE433_M4_MedicalProcedure.pdf
-├── src/                                # Modularized analysis pipeline (14 features)
+├── src/                                # Modularized analysis pipeline (13 features)
 │   ├── config.py                       # Constants, paths, RANDOM_STATE=42
 │   ├── data_loader.py                  # Excel loading, cleaning (Phase 1)
 │   ├── eda.py                          # EDA, distribution plots (Phase 2)
@@ -339,6 +338,8 @@ MSE-433-Module-4/
 │   └── viz.py                          # Shared viz constants
 ├── output/                             # Generated analysis outputs (gitignored)
 │   └── model/                          # Persisted LightGBM model (global_model.pkl)
+├── learnings/                          # Session lessons learned
+│   └── lessons_learned.md
 ├── main.py                             # Entry point — runs src/ pipeline
 ├── Makefile                            # Build automation (make all/serve/clean)
 ├── requirements.txt                    # Python dependencies

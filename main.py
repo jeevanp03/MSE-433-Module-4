@@ -6,6 +6,7 @@ Equivalent to running outlier_analysis.py.
 """
 
 import joblib
+import pandas as pd
 
 from src.config import init_output_dirs, MODEL_DIR
 from src.data_loader import load_and_clean
@@ -76,6 +77,13 @@ def main() -> None:
     print(f"  - Global outliers: {n_outliers} / {len(df)}")
     print(f"  - Global model: fitted on {len(X)} of {len(df)} cases ({len(df) - len(X)} excluded for missing features)")
     print(f"  - Top global drivers: {', '.join(top_features.index[:3])}")
+
+    # Print outlier case numbers
+    outlier_df = df[df["outlier_class"] == 1].sort_values("PT IN-OUT", ascending=False)
+    print(f"\n  Outlier cases (Case # | Physician | PT IN-OUT):")
+    for _, row in outlier_df.iterrows():
+        note_str = f" | {row['Note']}" if pd.notna(row["Note"]) and row["Note"] != "" else ""
+        print(f"    Case #{int(row['CASE #']):>3}  |  {row['PHYSICIAN']}  |  {int(row['PT IN-OUT']):>3} min{note_str}")
     print(f"\nPer-physician findings:")
     for phys in physicians:
         res = per_physician_results[phys]

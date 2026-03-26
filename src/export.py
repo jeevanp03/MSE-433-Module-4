@@ -104,7 +104,7 @@ def save_results(
             "eda/": "EDA charts (global + per-physician comparisons)",
             "global_model/": "Global LightGBM + SHAP plots",
             "per_physician/": "Per-physician model subdirectories",
-            "additional/": "Learning curve, complexity, scheduling analyses",
+            "additional/": "Learning curve, complexity, severity analyses",
         },
     }
 
@@ -166,7 +166,6 @@ def _write_markdown_summary(
 
     learning_curve_results = additional_results["learning_curve"]
     complexity_stats = additional_results["case_complexity"]
-    scheduling_results = additional_results["scheduling"]
     severity_results = additional_results["physician_severity"]
 
     summary_md = f"""# Analysis Summary: AFib Ablation Operation Duration Outliers
@@ -258,7 +257,6 @@ toward being classified as an outlier (long-duration):
         "NOTE_BOX": "Box isolation procedure adds to overall duration.",
         "NOTE_PST": "Posterior box ablation adds to overall duration.",
         "NOTE_SVC": "SVC ablation adds to overall duration.",
-        "CASE_ORDER_IN_DAY": "Case scheduling position in the day affects duration (earlier cases tend to be longer).",
     }
     for rank_i, (feat_i, val_i) in enumerate(top_features.items(), 1):
         desc = shap_descriptions.get(feat_i, f"Higher values push predictions toward outlier class.")
@@ -376,6 +374,10 @@ Based on the analysis, process improvement efforts should target:
         driver = list(sf.keys())[0] if sf else "N/A"
         phys_driver_parts.append(f"{p}: top driver = {driver}")
     summary_md += f"   - {', '.join(phys_driver_parts)}\n"
+    solution_num += 1
+
+    summary_md += f"""{solution_num}. **Track patient weight/BMI**: The current dataset contains only procedural timing data and has no patient demographics. Patient weight and BMI are known to affect vascular access difficulty, catheter manipulation, and intubation complexity — all phases where we observe high variability. Collecting patient weight prospectively would allow the analysis to disentangle patient-driven complexity from procedural inefficiency, and determine whether outlier cases cluster in specific BMI ranges.
+"""
 
     summary_md += """
 ---
@@ -408,20 +410,6 @@ Impact of additional procedures (CTI, BOX, PST BOX, SVC) on duration and outlier
 
     summary_md += f"""
 See: `additional/case_complexity.png`
-
-### Case Scheduling (Order Within Day)
-
-Does the sequence of a case in the day affect duration?
-
-| Case Order | N Cases | Mean Duration | Outlier Rate |
-|-----------:|--------:|--------------:|-------------:|
-"""
-
-    for order, info in scheduling_results["case_order_stats"].items():
-        summary_md += f"| {order} | {info['n_cases']} | {info['mean_duration']:.1f} min | {info['outlier_rate_pct']:.1f}% |\n"
-
-    summary_md += f"""
-See: `additional/case_order_scheduling.png`
 
 ### Physician Severity & Case Complexity Profile
 
@@ -456,6 +444,62 @@ See: `additional/physician_severity_profile.png`
 
 """
 
+    # --- Prep Time Deep Dive ---
+    prep_results = additional_results["prep_time"]
+    prep_phys = prep_results["per_physician"]
+    summary_md += f"""### PT PREP/INTUBATION Variability Deep Dive
+
+Prep time is the **2nd strongest correlate** with PT IN-OUT (r={prep_results['global_r']:.3f},
+R\u00b2={prep_results['global_r2_pct']:.1f}%, p={prep_results['global_p']:.6f}). Outlier cases
+average **{prep_results['outlier_mean']} min** prep vs **{prep_results['normal_mean']} min**
+for normal cases (+{prep_results['diff_min']} min).
+
+| Physician | Mean | Std | CV% | Range | Outlier Mean | Normal Mean | r with PT IN-OUT |
+|-----------|-----:|----:|----:|------:|-------------:|------------:|-----------------:|
+"""
+    for phys in physicians:
+        s = prep_phys[phys]
+        out_str = f"{s['outlier_mean']}" if s["outlier_mean"] is not None else "n/a"
+        norm_str = f"{s['normal_mean']}" if s["normal_mean"] is not None else "n/a"
+        summary_md += f"| {phys} | {s['mean']} | {s['std']} | {s['cv_pct']}% | {s['min']}-{s['max']} | {out_str} | {norm_str} | {s['r_with_pt_inout']:.3f} |\n"
+
+    prep_by_type = prep_results.get("by_procedure_type", {})
+    if prep_by_type:
+        summary_md += "\n**Prep time by procedure type:**\n\n"
+        summary_md += "| Procedure | N | Mean Prep | Std |\n"
+        summary_md += "|-----------|--:|----------:|----:|\n"
+        for label, info in prep_by_type.items():
+            summary_md += f"| {label} | {info['n']} | {info['mean']} min | {info['std']} |\n"
+
+    summary_md += "\nSee: `additional/prep_time_deep_dive.png`\n\n"
+
+    # --- Repositioning Deep Dive ---
+    repo_results = additional_results["repositioning"]
+    repo_phys = repo_results["per_physician"]
+    summary_md += f"""### Catheter Repositioning Efficiency Deep Dive
+
+ABL DURATION is the **strongest single correlate** with PT IN-OUT (r={repo_results['abl_duration_r']:.3f}),
+but ABL TIME (active pulse-on) is weak (r={repo_results['abl_time_r']:.3f}). The difference is
+**catheter repositioning time** (ABL DURATION minus ABL TIME), which correlates r={repo_results['global_r']:.3f}
+with PT IN-OUT (R\u00b2={repo_results['global_r2_pct']:.1f}%). Outlier cases average
+**{repo_results['outlier_mean']} min** repositioning vs **{repo_results['normal_mean']} min** for
+normal (+{repo_results['diff_min']} min).
+
+Number of ablation sites (#ABL) vs repositioning time: r={repo_results['sites_vs_repo_r']:.3f}
+({"weak" if abs(repo_results['sites_vs_repo_r']) < 0.3 else "moderate"} correlation, suggesting
+repositioning variability is driven by physician technique, not case complexity).
+
+| Physician | Mean Repo | Std | CV% | Per Site | Outlier Mean | Normal Mean | r with PT IN-OUT |
+|-----------|----------:|----:|----:|---------:|-------------:|------------:|-----------------:|
+"""
+    for phys in physicians:
+        s = repo_phys[phys]
+        out_str = f"{s['outlier_mean']}" if s["outlier_mean"] is not None else "n/a"
+        norm_str = f"{s['normal_mean']}" if s["normal_mean"] is not None else "n/a"
+        summary_md += f"| {phys} | {s['mean']} | {s['std']} | {s['cv_pct']}% | {s['repo_per_site_mean']:.2f} min/site | {out_str} | {norm_str} | {s['r_with_pt_inout']:.3f} |\n"
+
+    summary_md += "\nSee: `additional/repositioning_deep_dive.png`\n\n"
+
     summary_md += f"""---
 
 ## 8. Output Directory Structure
@@ -484,8 +528,9 @@ output/
 └── additional/                   # Extra analyses
     ├── learning_curve.png
     ├── case_complexity.png
-    ├── case_order_scheduling.png
-    └── physician_severity_profile.png
+    ├── physician_severity_profile.png
+    ├── prep_time_deep_dive.png
+    └── repositioning_deep_dive.png
 ```
 """
 

@@ -35,10 +35,6 @@ def engineer_features(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.Series, List[s
     df["NOTE_SVC"] = df["Note"].astype(str).str.contains("SVC", na=False).astype(int)
     feature_cols.extend(["NOTE_CTI", "NOTE_BOX", "NOTE_PST", "NOTE_SVC"])
 
-    # Add case order within day (proxy for fatigue/scheduling)
-    df["CASE_ORDER_IN_DAY"] = df.groupby("DATE").cumcount() + 1
-    feature_cols.append("CASE_ORDER_IN_DAY")
-
     # Drop rows with missing features
     model_df = df[feature_cols + ["outlier_class"]].dropna()
     X = model_df[feature_cols]

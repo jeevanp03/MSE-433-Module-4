@@ -9,6 +9,7 @@ import {
   Activity,
   Menu,
   X,
+  GitCompareArrows,
 } from 'lucide-react';
 import type { TabId } from '../types';
 
@@ -25,6 +26,7 @@ const navItems: NavItem[] = [
   { id: 'outliers', label: 'Outlier Deep Dive', icon: <AlertTriangle size={20} /> },
   { id: 'whatif', label: 'What-If Simulator', icon: <SlidersHorizontal size={20} /> },
   { id: 'trends', label: 'Trends', icon: <TrendingUp size={20} /> },
+  { id: 'repositioning', label: 'Repositioning', icon: <GitCompareArrows size={20} /> },
 ];
 
 interface LayoutProps {

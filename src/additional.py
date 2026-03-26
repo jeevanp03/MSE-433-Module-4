@@ -455,11 +455,16 @@ def _prep_time_variability(df: pd.DataFrame, physicians: list) -> Dict:
 
 
 def _repositioning_efficiency(df: pd.DataFrame, physicians: list) -> Dict:
-    """7f. Deep dive into catheter repositioning time (ABL DURATION - ABL TIME)."""
+    """7f. Deep dive into catheter repositioning time (ABL DURATION - ABL TIME).
+
+    Includes: correlation analysis, per-physician efficiency, time savings
+    projections, clinical floor estimates, and sequencing optimization potential.
+    """
     print("\n--- 7f. Catheter Repositioning Efficiency Deep Dive ---")
 
     df_valid = df.dropna(subset=["ABL DURATION", "ABL TIME", TARGET_COL]).copy()
     df_valid["REPO_TIME"] = df_valid["ABL DURATION"] - df_valid["ABL TIME"]
+    df_valid["REPO_PER_SITE"] = df_valid["REPO_TIME"] / df_valid["#ABL"]
 
     # Global correlation
     r_repo, p_repo = stats.pearsonr(df_valid["REPO_TIME"], df_valid[TARGET_COL])
@@ -476,6 +481,14 @@ def _repositioning_efficiency(df: pd.DataFrame, physicians: list) -> Dict:
     print(f"  Outlier mean repo: {outlier['REPO_TIME'].mean():.1f} min vs Normal: {normal['REPO_TIME'].mean():.1f} min "
           f"(+{outlier['REPO_TIME'].mean() - normal['REPO_TIME'].mean():.1f} min)")
 
+    # Global time breakdown
+    global_abl_dur_mean = float(df_valid["ABL DURATION"].mean())
+    global_abl_time_mean = float(df_valid["ABL TIME"].mean())
+    global_repo_mean = float(df_valid["REPO_TIME"].mean())
+    repo_pct_of_abl = global_repo_mean / global_abl_dur_mean * 100 if global_abl_dur_mean > 0 else 0
+    print(f"  Global ABL DURATION breakdown: {global_abl_time_mean:.1f} min pulse-on + "
+          f"{global_repo_mean:.1f} min repositioning ({repo_pct_of_abl:.0f}% of ABL DURATION)")
+
     # Per-physician stats
     phys_repo_stats = {}
     for phys in physicians:
@@ -484,18 +497,23 @@ def _repositioning_efficiency(df: pd.DataFrame, physicians: list) -> Dict:
         sub_out = sub[sub["outlier_class"] == 1]
         sub_norm = sub[sub["outlier_class"] == 0]
         r_phys, p_phys = stats.pearsonr(sub["REPO_TIME"], sub[TARGET_COL]) if len(sub) > 2 else (0, 1)
-        # Repositioning per ablation site
-        repo_per_site = repo / sub["#ABL"]
+        repo_per_site = sub["REPO_PER_SITE"]
         phys_repo_stats[phys] = {
             "n": int(len(sub)),
             "mean": round(float(repo.mean()), 1),
             "median": round(float(repo.median()), 1),
             "std": round(float(repo.std()), 1),
             "cv_pct": round(float(repo.std() / repo.mean() * 100), 1) if repo.mean() > 0 else 0,
+            "min": round(float(repo.min()), 1),
+            "max": round(float(repo.max()), 1),
             "outlier_mean": round(float(sub_out["REPO_TIME"].mean()), 1) if len(sub_out) > 0 else None,
             "normal_mean": round(float(sub_norm["REPO_TIME"].mean()), 1) if len(sub_norm) > 0 else None,
             "repo_per_site_mean": round(float(repo_per_site.mean()), 2),
             "repo_per_site_std": round(float(repo_per_site.std()), 2),
+            "abl_duration_mean": round(float(sub["ABL DURATION"].mean()), 1),
+            "abl_time_mean": round(float(sub["ABL TIME"].mean()), 1),
+            "repo_pct_of_abl": round(float(repo.mean() / sub["ABL DURATION"].mean() * 100), 1)
+                if sub["ABL DURATION"].mean() > 0 else 0,
             "r_with_pt_inout": round(float(r_phys), 3),
         }
         s = phys_repo_stats[phys]
@@ -506,9 +524,72 @@ def _repositioning_efficiency(df: pd.DataFrame, physicians: list) -> Dict:
     r_sites, p_sites = stats.pearsonr(df_valid["#ABL"], df_valid["REPO_TIME"])
     print(f"  #ABL vs Repositioning time: r={r_sites:.3f}, p={p_sites:.4f}")
 
-    # === Figure: 2x2 repositioning deep dive ===
-    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
-    fig.suptitle("Catheter Repositioning Efficiency Deep Dive\n(Repositioning = ABL DURATION - ABL TIME)",
+    # --- Time savings projections ---
+    # Best-in-class benchmark: physician with lowest per-site repositioning
+    best_phys = min(phys_repo_stats, key=lambda p: phys_repo_stats[p]["repo_per_site_mean"])
+    best_rate = phys_repo_stats[best_phys]["repo_per_site_mean"]
+    # Clinical floor: literature suggests ~8-10 min minimum repositioning for a standard
+    # 4-vein PVI with Varipulse (contact quality verification is irreducible)
+    median_abl_sites = float(df_valid["#ABL"].median())
+    clinical_floor_per_site = 0.50  # ~0.5 min/site is hard floor for safe repositioning
+    clinical_floor_total = round(clinical_floor_per_site * median_abl_sites, 1)
+
+    savings_projections = {}
+    for phys in physicians:
+        sub = df_valid[df_valid["PHYSICIAN"] == phys]
+        current_rate = phys_repo_stats[phys]["repo_per_site_mean"]
+        current_mean = phys_repo_stats[phys]["mean"]
+        mean_sites = float(sub["#ABL"].mean())
+
+        # Savings if matching best-in-class
+        projected_repo_at_best = best_rate * mean_sites
+        savings_vs_best = current_mean - projected_repo_at_best
+        # Savings if matching clinical floor
+        projected_repo_at_floor = clinical_floor_per_site * mean_sites
+        savings_vs_floor = current_mean - projected_repo_at_floor
+
+        savings_projections[phys] = {
+            "current_rate": round(current_rate, 2),
+            "current_mean_repo": round(current_mean, 1),
+            "mean_abl_sites": round(mean_sites, 1),
+            "best_in_class_target": round(best_rate, 2),
+            "best_in_class_phys": best_phys,
+            "projected_repo_at_best": round(projected_repo_at_best, 1),
+            "savings_vs_best_min": round(max(0, savings_vs_best), 1),
+            "clinical_floor_rate": clinical_floor_per_site,
+            "projected_repo_at_floor": round(projected_repo_at_floor, 1),
+            "savings_vs_floor_min": round(max(0, savings_vs_floor), 1),
+        }
+        if savings_vs_best > 0.5:
+            print(f"  {phys} savings projection: {savings_vs_best:.1f} min/case if matching {best_phys}'s rate")
+
+    # Aggregate program-level savings
+    total_annual_savings_best = sum(
+        savings_projections[p]["savings_vs_best_min"] * phys_repo_stats[p]["n"]
+        for p in physicians
+    )
+    print(f"  Total program savings if all match {best_phys}: {total_annual_savings_best:.0f} min "
+          f"across {len(df_valid)} cases ({total_annual_savings_best/len(df_valid):.1f} min/case avg)")
+
+    # Per-case repositioning data for dashboard
+    per_case_repo = []
+    for _, row in df_valid.iterrows():
+        per_case_repo.append({
+            "caseNum": int(row["CASE #"]),
+            "physician": row["PHYSICIAN"],
+            "ablDuration": round(float(row["ABL DURATION"]), 1),
+            "ablTime": round(float(row["ABL TIME"]), 1),
+            "repoTime": round(float(row["REPO_TIME"]), 1),
+            "repoPerSite": round(float(row["REPO_PER_SITE"]), 2),
+            "numAbl": int(row["#ABL"]),
+            "ptInOut": round(float(row[TARGET_COL]), 1),
+            "outlierClass": int(row["outlier_class"]),
+        })
+
+    # === Figure: 3x2 expanded repositioning deep dive ===
+    fig, axes = plt.subplots(3, 2, figsize=(16, 18))
+    fig.suptitle("Catheter Repositioning Efficiency Deep Dive\n"
+                 "(Repositioning = ABL DURATION − ABL TIME)",
                  fontsize=14, fontweight="bold")
 
     # (0,0) Scatter: Repositioning time vs PT IN-OUT
@@ -580,11 +661,58 @@ def _repositioning_efficiency(df: pd.DataFrame, physicians: list) -> Dict:
     ax.bar(x_pos, means, 0.5, yerr=stds, color=bar_colors, alpha=0.7, edgecolor="black",
            capsize=5, error_kw={"linewidth": 1.5})
     for i, (m, s) in enumerate(zip(means, stds)):
-        ax.text(i, m + s + 0.02, f"{m:.2f}±{s:.2f}", ha="center", fontsize=9, fontweight="bold")
+        ax.text(i, m + s + 0.02, f"{m:.2f}\u00b1{s:.2f}", ha="center", fontsize=9, fontweight="bold")
+    # Clinical floor reference line
+    ax.axhline(y=clinical_floor_per_site, color="green", linestyle="--", linewidth=1.5,
+               label=f"Clinical floor ({clinical_floor_per_site:.2f} min/site)")
     ax.set_xticks(x_pos)
     ax.set_xticklabels(physicians)
     ax.set_ylabel("Minutes per Ablation Site")
     ax.set_title("Repositioning Efficiency: Time per Ablation Site")
+    ax.legend(fontsize=8)
+
+    # (2,0) Stacked bar: ABL TIME breakdown by physician (pulse-on vs repositioning)
+    ax = axes[2, 0]
+    abl_times = [phys_repo_stats[p]["abl_time_mean"] for p in physicians]
+    repo_times = [phys_repo_stats[p]["mean"] for p in physicians]
+    ax.bar(x_pos, abl_times, 0.5, label="Pulse-On (ABL TIME)", color="#4CAF50", alpha=0.8, edgecolor="black")
+    ax.bar(x_pos, repo_times, 0.5, bottom=abl_times, label="Repositioning", color="#FF9800", alpha=0.8,
+           edgecolor="black", hatch="//")
+    for i in range(len(physicians)):
+        total = abl_times[i] + repo_times[i]
+        pct = repo_times[i] / total * 100 if total > 0 else 0
+        ax.text(i, total + 0.5, f"{total:.0f} min\n({pct:.0f}% repo)", ha="center", fontsize=8, fontweight="bold")
+        ax.text(i, abl_times[i] / 2, f"{abl_times[i]:.1f}", ha="center", fontsize=8, color="white", fontweight="bold")
+        ax.text(i, abl_times[i] + repo_times[i] / 2, f"{repo_times[i]:.1f}", ha="center", fontsize=8)
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(physicians)
+    ax.set_ylabel("Duration (minutes)")
+    ax.set_title("Ablation Phase Breakdown: Pulse-On vs Repositioning")
+    ax.legend(fontsize=8)
+
+    # (2,1) Time savings waterfall: projected savings per physician
+    ax = axes[2, 1]
+    current_vals = [phys_repo_stats[p]["mean"] for p in physicians]
+    target_vals = [savings_projections[p]["projected_repo_at_best"] for p in physicians]
+    savings_vals = [savings_projections[p]["savings_vs_best_min"] for p in physicians]
+    width = 0.35
+    ax.bar(x_pos - width/2, current_vals, width, label="Current Repo Time", color=bar_colors, alpha=0.7,
+           edgecolor="black")
+    ax.bar(x_pos + width/2, target_vals, width, label=f"Target ({best_phys}'s rate)", color=bar_colors, alpha=0.3,
+           edgecolor="black", hatch="//")
+    for i in range(len(physicians)):
+        if savings_vals[i] > 0.5:
+            ax.annotate(f"−{savings_vals[i]:.1f} min",
+                        xy=(i, current_vals[i]), xytext=(i + 0.3, current_vals[i] + 1),
+                        fontsize=9, fontweight="bold", color="red",
+                        arrowprops=dict(arrowstyle="->", color="red", lw=1.5))
+    ax.axhline(y=clinical_floor_total, color="green", linestyle="--", linewidth=1.5,
+               label=f"Clinical floor ({clinical_floor_total:.0f} min for {median_abl_sites:.0f} sites)")
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(physicians)
+    ax.set_ylabel("Repositioning Time (minutes)")
+    ax.set_title(f"Time Savings Projection: Match {best_phys}'s Efficiency")
+    ax.legend(fontsize=7, loc="upper left")
 
     plt.tight_layout()
     plt.savefig(f"{EXTRA_DIR}/repositioning_deep_dive.png", dpi=SAVE_DPI, bbox_inches="tight")
@@ -600,5 +728,17 @@ def _repositioning_efficiency(df: pd.DataFrame, physicians: list) -> Dict:
         "normal_mean": round(float(normal["REPO_TIME"].mean()), 1),
         "diff_min": round(float(outlier["REPO_TIME"].mean() - normal["REPO_TIME"].mean()), 1),
         "sites_vs_repo_r": round(float(r_sites), 3),
+        "global_abl_dur_mean": round(global_abl_dur_mean, 1),
+        "global_abl_time_mean": round(global_abl_time_mean, 1),
+        "global_repo_mean": round(global_repo_mean, 1),
+        "repo_pct_of_abl": round(repo_pct_of_abl, 1),
+        "clinical_floor_per_site": clinical_floor_per_site,
+        "clinical_floor_total": clinical_floor_total,
+        "best_in_class_phys": best_phys,
+        "best_in_class_rate": round(best_rate, 2),
+        "total_program_savings_min": round(total_annual_savings_best, 1),
+        "avg_savings_per_case_min": round(total_annual_savings_best / len(df_valid), 1),
         "per_physician": phys_repo_stats,
+        "savings_projections": savings_projections,
+        "per_case": per_case_repo,
     }

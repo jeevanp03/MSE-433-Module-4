@@ -163,7 +163,72 @@ def main() -> None:
         })
     complexity = {"procedureTypes": procedure_types}
 
-    # ── 9. metadata ──
+    # ── 9. repositioning ──
+    repo_report = report["additional_analyses"]["repositioning"]
+    repo_phys = repo_report["per_physician"]
+    repo_savings = repo_report.get("savings_projections", {})
+    repo_per_case = repo_report.get("per_case", [])
+
+    repositioning = {
+        "globalStats": {
+            "repoCorrelation": repo_report["global_r"],
+            "repoR2Pct": repo_report["global_r2_pct"],
+            "ablDurationCorrelation": repo_report["abl_duration_r"],
+            "ablTimeCorrelation": repo_report["abl_time_r"],
+            "outlierMean": repo_report["outlier_mean"],
+            "normalMean": repo_report["normal_mean"],
+            "diffMin": repo_report["diff_min"],
+            "sitesVsRepoCorrelation": repo_report["sites_vs_repo_r"],
+            "globalAblDurMean": repo_report.get("global_abl_dur_mean"),
+            "globalAblTimeMean": repo_report.get("global_abl_time_mean"),
+            "globalRepoMean": repo_report.get("global_repo_mean"),
+            "repoPctOfAbl": repo_report.get("repo_pct_of_abl"),
+            "clinicalFloorPerSite": repo_report.get("clinical_floor_per_site"),
+            "clinicalFloorTotal": repo_report.get("clinical_floor_total"),
+            "bestInClassPhys": repo_report.get("best_in_class_phys"),
+            "bestInClassRate": repo_report.get("best_in_class_rate"),
+            "totalProgramSavingsMin": repo_report.get("total_program_savings_min"),
+            "avgSavingsPerCaseMin": repo_report.get("avg_savings_per_case_min"),
+        },
+        "perPhysician": {},
+        "savingsProjections": {},
+        "perCase": repo_per_case,
+    }
+
+    for phys_name, phys_stats in repo_phys.items():
+        repositioning["perPhysician"][phys_name] = {
+            "n": phys_stats["n"],
+            "mean": phys_stats["mean"],
+            "median": phys_stats["median"],
+            "std": phys_stats["std"],
+            "cvPct": phys_stats["cv_pct"],
+            "min": phys_stats.get("min"),
+            "max": phys_stats.get("max"),
+            "outlierMean": phys_stats["outlier_mean"],
+            "normalMean": phys_stats["normal_mean"],
+            "repoPerSiteMean": phys_stats["repo_per_site_mean"],
+            "repoPerSiteStd": phys_stats["repo_per_site_std"],
+            "ablDurationMean": phys_stats.get("abl_duration_mean"),
+            "ablTimeMean": phys_stats.get("abl_time_mean"),
+            "repoPctOfAbl": phys_stats.get("repo_pct_of_abl"),
+            "rWithPtInout": phys_stats["r_with_pt_inout"],
+        }
+
+    for phys_name, sav in repo_savings.items():
+        repositioning["savingsProjections"][phys_name] = {
+            "currentRate": sav["current_rate"],
+            "currentMeanRepo": sav["current_mean_repo"],
+            "meanAblSites": sav["mean_abl_sites"],
+            "bestInClassTarget": sav["best_in_class_target"],
+            "bestInClassPhys": sav["best_in_class_phys"],
+            "projectedRepoAtBest": sav["projected_repo_at_best"],
+            "savingsVsBestMin": sav["savings_vs_best_min"],
+            "clinicalFloorRate": sav["clinical_floor_rate"],
+            "projectedRepoAtFloor": sav["projected_repo_at_floor"],
+            "savingsVsFloorMin": sav["savings_vs_floor_min"],
+        }
+
+    # ── 10. metadata ──
     target_stats = report["target_variable"]
     metadata = {
         "totalCases": report["dataset"]["total_cases"],
@@ -191,6 +256,7 @@ def main() -> None:
         "distributions": distributions,
         "trends": trends,
         "complexity": complexity,
+        "repositioning": repositioning,
         "metadata": metadata,
     }
 

@@ -178,6 +178,94 @@ export interface WhatIfData {
   medians: Record<string, number>;
 }
 
+// ── Repositioning ──────────────────────────────────────────────────────────
+
+export interface RepoGlobalStats {
+  repoCorrelation: number;
+  repoR2Pct: number;
+  ablDurationCorrelation: number;
+  ablTimeCorrelation: number;
+  outlierMean: number;
+  normalMean: number;
+  diffMin: number;
+  sitesVsRepoCorrelation: number;
+  globalAblDurMean: number;
+  globalAblTimeMean: number;
+  globalRepoMean: number;
+  repoPctOfAbl: number;
+  clinicalFloorPerSite: number;
+  clinicalFloorTotal: number;
+  bestInClassPhys: string;
+  bestInClassRate: number;
+  totalProgramSavingsMin: number;
+  avgSavingsPerCaseMin: number;
+}
+
+export interface RepoPhysicianStats {
+  n: number;
+  mean: number;
+  median: number;
+  std: number;
+  cvPct: number;
+  min: number;
+  max: number;
+  outlierMean: number | null;
+  normalMean: number | null;
+  repoPerSiteMean: number;
+  repoPerSiteStd: number;
+  ablDurationMean: number;
+  ablTimeMean: number;
+  repoPctOfAbl: number;
+  rWithPtInout: number;
+}
+
+export interface SavingsProjection {
+  currentRate: number;
+  currentMeanRepo: number;
+  meanAblSites: number;
+  bestInClassTarget: number;
+  bestInClassPhys: string;
+  projectedRepoAtBest: number;
+  savingsVsBestMin: number;
+  clinicalFloorRate: number;
+  projectedRepoAtFloor: number;
+  savingsVsFloorMin: number;
+}
+
+export interface RepoCaseData {
+  caseNum: number;
+  physician: string;
+  ablDuration: number;
+  ablTime: number;
+  repoTime: number;
+  repoPerSite: number;
+  numAbl: number;
+  ptInOut: number;
+  outlierClass: number;
+}
+
+export interface RepositioningData {
+  globalStats: RepoGlobalStats;
+  perPhysician: Record<string, RepoPhysicianStats>;
+  savingsProjections: Record<string, SavingsProjection>;
+  perCase: RepoCaseData[];
+}
+
+// ── Dashboard Data (top-level) ──────────────────────────────────────────────
+
+export interface DashboardData {
+  cases: Case[];
+  globalModel: GlobalModel;
+  physicians: Record<string, PhysicianData>;
+  shapValues: number[][];
+  featureStats: Record<string, FeatureStats>;
+  distributions: Distributions;
+  trends: Trends;
+  complexity: Complexity;
+  repositioning: RepositioningData;
+  metadata: Metadata;
+}
+
 // ── Navigation ──────────────────────────────────────────────────────────────
 
 export type TabId =
@@ -186,4 +274,5 @@ export type TabId =
   | 'shap'
   | 'outliers'
   | 'whatif'
-  | 'trends';
+  | 'trends'
+  | 'repositioning';

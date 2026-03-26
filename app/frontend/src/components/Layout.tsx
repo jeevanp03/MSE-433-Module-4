@@ -5,7 +5,6 @@ import {
   BrainCircuit,
   AlertTriangle,
   SlidersHorizontal,
-  ArrowRightLeft,
   TrendingUp,
   Activity,
   Menu,
@@ -25,7 +24,6 @@ const navItems: NavItem[] = [
   { id: 'shap', label: 'SHAP Explorer', icon: <BrainCircuit size={20} /> },
   { id: 'outliers', label: 'Outlier Deep Dive', icon: <AlertTriangle size={20} /> },
   { id: 'whatif', label: 'What-If Simulator', icon: <SlidersHorizontal size={20} /> },
-  { id: 'reassignment', label: 'Reassignment', icon: <ArrowRightLeft size={20} /> },
   { id: 'trends', label: 'Trends', icon: <TrendingUp size={20} /> },
 ];
 

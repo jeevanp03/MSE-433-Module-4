@@ -26,7 +26,6 @@ const CLINICAL_TOOLTIPS: Record<string, string> = {
   '#ABL': 'Number of individual ablation sites targeted.',
   'POST CARE/EXTUBATION': 'Cath-Out to Pt-Out. Hemostasis, extubation, and brief post-procedure monitoring.',
   PHYSICIAN_ENC: 'Anonymized operating electrophysiologist (Dr. A, Dr. B, or Dr. C).',
-  CASE_ORDER_IN_DAY: 'Position in daily procedural schedule (1st, 2nd, 3rd case, etc.).',
   NOTE_CTI: 'Additional ablation: cavotricuspid isthmus (CTI).',
   NOTE_BOX: 'Additional ablation: box isolation (posterior wall).',
   NOTE_PST: 'Additional ablation: posterior wall (PST BOX).',

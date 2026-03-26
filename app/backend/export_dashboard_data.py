@@ -144,21 +144,9 @@ def main() -> None:
             "physician": row["PHYSICIAN"],
         })
 
-    scheduling_effects = []
-    for _, row in df.iterrows():
-        co = row.get("CASE_ORDER_IN_DAY")
-        if pd.notna(co):
-            scheduling_effects.append({
-                "caseOrder": int(co),
-                "duration": float(row["PT IN-OUT"]),
-                "physician": row["PHYSICIAN"],
-            })
-
     trends = {
         "learningCurve": learning_curve,
-        "schedulingEffects": scheduling_effects,
         "learningCurveStats": report["additional_analyses"]["learning_curve"],
-        "schedulingStats": report["additional_analyses"]["scheduling"],
     }
 
     # ── 8. complexity ──

@@ -5,7 +5,6 @@ import PhysicianComparison from './components/PhysicianComparison';
 import ShapExplorer from './components/ShapExplorer';
 import OutlierDeepDive from './components/OutlierDeepDive';
 import WhatIfSimulator from './components/WhatIfSimulator';
-import PatientReassignment from './components/PatientReassignment';
 import Trends from './components/Trends';
 import type { TabId } from './types';
 
@@ -15,7 +14,6 @@ const pages: Record<TabId, () => JSX.Element> = {
   shap: ShapExplorer,
   outliers: OutlierDeepDive,
   whatif: WhatIfSimulator,
-  reassignment: PatientReassignment,
   trends: Trends,
 };
 

@@ -97,7 +97,7 @@ export default function Overview() {
     const topFeature = [...globalModel.featureImportance].sort((a, b) => b.shapMean - a.shapMean)[0];
 
     // Top modifiable timing phases (exclude physician/scheduling)
-    const nonModifiable = new Set(['PHYSICIAN_ENC', 'CASE_ORDER_IN_DAY', 'NOTE_CTI', 'NOTE_BOX', 'NOTE_PST', 'NOTE_SVC']);
+    const nonModifiable = new Set(['PHYSICIAN_ENC', 'NOTE_CTI', 'NOTE_BOX', 'NOTE_PST', 'NOTE_SVC']);
     const topTimingPhases = [...globalModel.featureImportance]
       .filter(f => !nonModifiable.has(f.feature))
       .sort((a, b) => b.shapMean - a.shapMean)

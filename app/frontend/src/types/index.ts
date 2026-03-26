@@ -74,17 +74,9 @@ export interface LearningCurvePoint {
   physician: string;
 }
 
-export interface SchedulingPoint {
-  caseOrder: number;
-  duration: number;
-  physician: string;
-}
-
 export interface Trends {
   learningCurve: LearningCurvePoint[];
-  schedulingEffects: SchedulingPoint[];
   learningCurveStats: Record<string, unknown>;
-  schedulingStats: Record<string, unknown>;
 }
 
 // ── Complexity ──────────────────────────────────────────────────────────────
@@ -194,5 +186,4 @@ export type TabId =
   | 'shap'
   | 'outliers'
   | 'whatif'
-  | 'reassignment'
   | 'trends';

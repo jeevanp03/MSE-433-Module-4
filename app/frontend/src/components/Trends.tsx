@@ -1,13 +1,13 @@
 import { useState, useMemo } from 'react';
-import { TrendingUp, BookOpen, Calendar, Layers, Lightbulb } from 'lucide-react';
+import { TrendingUp, BookOpen, Layers, Lightbulb } from 'lucide-react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-  ScatterChart, Scatter, ReferenceLine, ZAxis,
+  ReferenceLine,
   BarChart, Bar, Cell,
 } from 'recharts';
 import { motion } from 'framer-motion';
 import dashboardData from '../data/dashboard_data.json';
-import type { DashboardData, LearningCurvePoint, SchedulingPoint, ProcedureType } from '../types';
+import type { DashboardData, LearningCurvePoint, ProcedureType } from '../types';
 
 const data = dashboardData as DashboardData;
 
@@ -214,120 +214,6 @@ function LearningCurveSection() {
   );
 }
 
-// -- Scheduling Effects --
-
-function SchedulingSection() {
-  const rawData: SchedulingPoint[] = data.trends.schedulingEffects;
-
-  const physicians = useMemo(() => [...new Set(rawData.map(d => d.physician))], [rawData]);
-
-  const scatterByPhys = useMemo(() => {
-    const map: Record<string, { x: number; y: number }[]> = {};
-    for (const p of physicians) map[p] = [];
-    for (const d of rawData) {
-      map[d.physician].push({ x: d.caseOrder, y: d.duration });
-    }
-    return map;
-  }, [rawData, physicians]);
-
-  const avgByOrder = useMemo(() => {
-    const groups: Record<number, number[]> = {};
-    for (const d of rawData) {
-      if (!groups[d.caseOrder]) groups[d.caseOrder] = [];
-      groups[d.caseOrder].push(d.duration);
-    }
-    return Object.entries(groups)
-      .map(([order, vals]) => ({
-        order: Number(order),
-        avg: Math.round(vals.reduce((s, v) => s + v, 0) / vals.length),
-      }))
-      .sort((a, b) => a.order - b.order);
-  }, [rawData]);
-
-  return (
-    <motion.div {...fadeIn} transition={{ duration: 0.5, delay: 0.15 }} className="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-      <SectionHeader
-        icon={<Calendar size={20} className="text-[#0d9488]" />}
-        title="Scheduling Effects"
-      />
-
-      <div className="flex flex-col lg:flex-row gap-6">
-        <div className="flex-1 min-w-0">
-          <ResponsiveContainer width="100%" height={340}>
-            <ScatterChart margin={{ top: 10, right: 20, bottom: 20, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis
-                type="number"
-                dataKey="x"
-                name="Case position"
-                domain={[0, 'dataMax + 1']}
-                tick={{ fontSize: 11 }}
-                label={{ value: 'Case position in daily schedule', position: 'insideBottom', offset: -8, style: { fontSize: 11, fill: '#9ca3af' } }}
-              />
-              <YAxis
-                type="number"
-                dataKey="y"
-                name="Duration"
-                tick={{ fontSize: 11 }}
-                label={{ value: 'Duration (min)', angle: -90, position: 'insideLeft', style: { fontSize: 11, fill: '#9ca3af' } }}
-              />
-              <ZAxis range={[40, 40]} />
-              <Tooltip
-                contentStyle={{ borderRadius: 8, fontSize: 12, border: '1px solid #e5e7eb' }}
-                formatter={(value, name) => {
-                  if (name === 'Duration') return [`${value} min`, name];
-                  return [String(value), String(name)];
-                }}
-              />
-              <ReferenceLine
-                y={OUTLIER_THRESHOLD}
-                stroke="#f59e0b"
-                strokeDasharray="6 3"
-                label={{ value: `Outlier threshold (${OUTLIER_THRESHOLD.toFixed(0)} min)`, position: 'right', style: { fontSize: 10, fill: '#f59e0b' } }}
-              />
-              {physicians.map(p => (
-                <Scatter
-                  key={p}
-                  name={p}
-                  data={scatterByPhys[p]}
-                  fill={PHYSICIAN_COLORS[p]}
-                  opacity={0.7}
-                />
-              ))}
-            </ScatterChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="lg:w-72 shrink-0 flex flex-col gap-4">
-          <InsightCard>
-            First cases of the day average {avgByOrder[0]?.avg ?? 91} min vs{' '}
-            {avgByOrder.length > 5 ? avgByOrder[5]?.avg ?? 61 : avgByOrder[avgByOrder.length - 1]?.avg ?? 61} min
-            for later cases -- suggesting a warmup effect and team coordination improvement
-            throughout the day.
-          </InsightCard>
-          <div className="bg-gray-50 rounded-lg p-4">
-            <p className="text-xs font-medium text-gray-500 mb-2">Average duration by position</p>
-            <div className="space-y-1.5">
-              {avgByOrder.map(({ order, avg }) => (
-                <div key={order} className="flex items-center gap-2 text-xs">
-                  <span className="w-16 text-gray-400">Case {order}</span>
-                  <div className="flex-1 bg-gray-200 rounded-full h-2 overflow-hidden">
-                    <div
-                      className="h-full rounded-full bg-[#0d9488]"
-                      style={{ width: `${(avg / 200) * 100}%` }}
-                    />
-                  </div>
-                  <span className="w-12 text-right font-medium text-gray-700">{avg} min</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-    </motion.div>
-  );
-}
-
 // -- Case Complexity --
 
 function ComplexitySection() {
@@ -460,14 +346,13 @@ export default function Trends() {
       <div className="flex items-center gap-3 mb-6">
         <TrendingUp size={28} className="text-[#1e40af]" />
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Trends & Scheduling</h1>
-          <p className="text-sm text-gray-400">Learning curves, scheduling effects, and case complexity analysis</p>
+          <h1 className="text-2xl font-bold text-gray-900">Trends & Complexity</h1>
+          <p className="text-sm text-gray-400">Learning curves and case complexity analysis</p>
         </div>
       </div>
 
       <div className="space-y-6">
         <LearningCurveSection />
-        <SchedulingSection />
         <ComplexitySection />
       </div>
     </div>

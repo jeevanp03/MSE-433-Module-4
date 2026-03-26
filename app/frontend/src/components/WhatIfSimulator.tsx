@@ -54,7 +54,6 @@ const TIMING_FEATURES = [
 
 const BINARY_FEATURES = ['NOTE_CTI', 'NOTE_BOX', 'NOTE_PST', 'NOTE_SVC'];
 const PHYSICIAN_FEATURE = 'PHYSICIAN_ENC';
-const SCHEDULING_FEATURE = 'CASE_ORDER_IN_DAY';
 
 const PHYSICIAN_NAMES: Record<number, string> = { 0: 'Dr A', 1: 'Dr B', 2: 'Dr C' };
 
@@ -72,7 +71,6 @@ const FEATURE_LABELS: Record<string, string> = {
   NOTE_BOX: 'BOX',
   NOTE_PST: 'PST',
   NOTE_SVC: 'SVC',
-  CASE_ORDER_IN_DAY: 'Case Order in Day',
 };
 
 const PRESET_META: { key: string; label: string; icon: React.ReactNode; color: string; bgColor: string; borderColor: string }[] = [
@@ -534,14 +532,6 @@ export default function WhatIfSimulator() {
                   ))}
                 </div>
               </div>
-              {FEATURE_STATS[SCHEDULING_FEATURE] && (
-                <FeatureSlider
-                  feature={SCHEDULING_FEATURE}
-                  value={featureValues[SCHEDULING_FEATURE] ?? 3}
-                  onChange={(v) => updateFeature(SCHEDULING_FEATURE, v)}
-                  stats={FEATURE_STATS[SCHEDULING_FEATURE]}
-                />
-              )}
             </div>
           </motion.div>
 
@@ -632,10 +622,6 @@ export default function WhatIfSimulator() {
               <div className="bg-gray-50 rounded-lg p-2">
                 <span className="text-gray-400 block">Physician</span>
                 <span className="font-bold text-gray-700">{PHYSICIAN_NAMES[physician] ?? `ID ${physician}`}</span>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-2">
-                <span className="text-gray-400 block">Case Order</span>
-                <span className="font-bold text-gray-700">#{Math.round(featureValues[SCHEDULING_FEATURE] ?? 3)}</span>
               </div>
               <div className="bg-gray-50 rounded-lg p-2">
                 <span className="text-gray-400 block">Procedures</span>

@@ -10,6 +10,7 @@ import {
   Menu,
   X,
   GitCompareArrows,
+  ClipboardList,
 } from 'lucide-react';
 import type { TabId } from '../types';
 
@@ -27,6 +28,7 @@ const navItems: NavItem[] = [
   { id: 'whatif', label: 'What-If Simulator', icon: <SlidersHorizontal size={20} /> },
   { id: 'trends', label: 'Trends', icon: <TrendingUp size={20} /> },
   { id: 'repositioning', label: 'Repositioning', icon: <GitCompareArrows size={20} /> },
+  { id: 'preptracker', label: 'Prep Tracker', icon: <ClipboardList size={20} /> },
 ];
 
 interface LayoutProps {

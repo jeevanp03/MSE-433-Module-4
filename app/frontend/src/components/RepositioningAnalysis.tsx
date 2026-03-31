@@ -12,10 +12,39 @@ import {
 } from 'recharts';
 import { motion } from 'framer-motion';
 import dashboardData from '../data/dashboard_data.json';
-import type { DashboardData, RepoCaseData } from '../types';
+import type { DashboardData, RepositioningData, RepoCaseData } from '../types';
 
-const data = dashboardData as DashboardData;
-const repo = data.repositioning;
+type DashboardWithOptionalRepositioning = Omit<DashboardData, 'repositioning'> & {
+  repositioning?: RepositioningData;
+};
+
+const data = dashboardData as DashboardWithOptionalRepositioning;
+const hasRepositioningData = Boolean(data.repositioning);
+const repo: RepositioningData = data.repositioning ?? {
+  globalStats: {
+    repoCorrelation: 0,
+    repoR2Pct: 0,
+    ablDurationCorrelation: 0,
+    ablTimeCorrelation: 0,
+    outlierMean: 0,
+    normalMean: 0,
+    diffMin: 0,
+    sitesVsRepoCorrelation: 0,
+    globalAblDurMean: 0,
+    globalAblTimeMean: 0,
+    globalRepoMean: 0,
+    repoPctOfAbl: 0,
+    clinicalFloorPerSite: 0,
+    clinicalFloorTotal: 0,
+    bestInClassPhys: 'N/A',
+    bestInClassRate: 0,
+    totalProgramSavingsMin: 0,
+    avgSavingsPerCaseMin: 0,
+  },
+  perPhysician: {},
+  savingsProjections: {},
+  perCase: [],
+};
 const gs = repo.globalStats;
 
 const PHYSICIAN_COLORS: Record<string, string> = {
@@ -568,6 +597,12 @@ export default function RepositioningAnalysis() {
           </p>
         </div>
       </div>
+      {!hasRepositioningData && (
+        <div className="mb-5 rounded-lg border border-amber-200 bg-amber-50 p-4 text-amber-800 text-sm">
+          Repositioning analytics dataset is not present in dashboard_data.json.
+          This demo now renders with a safe placeholder so the page stays usable.
+        </div>
+      )}
 
       <MetricsOverview />
 

@@ -7,6 +7,7 @@ import OutlierDeepDive from './components/OutlierDeepDive';
 import WhatIfSimulator from './components/WhatIfSimulator';
 import Trends from './components/Trends';
 import RepositioningAnalysis from './components/RepositioningAnalysis';
+import PrepTracker from './components/PrepTracker';
 import type { TabId } from './types';
 
 const pages: Record<TabId, () => JSX.Element> = {
@@ -17,6 +18,7 @@ const pages: Record<TabId, () => JSX.Element> = {
   whatif: WhatIfSimulator,
   trends: Trends,
   repositioning: RepositioningAnalysis,
+  preptracker: PrepTracker,
 };
 
 export default function App() {

@@ -275,4 +275,5 @@ export type TabId =
   | 'outliers'
   | 'whatif'
   | 'trends'
-  | 'repositioning';
+  | 'repositioning'
+  | 'preptracker';

@@ -16,6 +16,8 @@ from src.model import train_global_model
 from src.per_physician import run_per_physician_analysis
 from src.additional import run_additional_analyses
 from src.export import save_results
+from src.checklist_simulation import run_simulation
+from src.checklist_validation import run_validation
 
 
 def main() -> None:
@@ -63,6 +65,10 @@ def main() -> None:
         df, feature_cols, outlier_threshold, top_features,
         per_physician_results, additional_results, X, y,
     )
+
+    # Phase 9: Checklist tracker validation (Monte Carlo simulation)
+    gt_df, tracker_df, sim_metadata = run_simulation(n_sessions=150)
+    validation_report = run_validation(gt_df, tracker_df, sim_metadata, real_df=df)
 
     # Final summary
     physicians = sorted(df["PHYSICIAN"].unique())

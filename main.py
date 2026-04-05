@@ -18,6 +18,8 @@ from src.additional import run_additional_analyses
 from src.export import save_results
 from src.checklist_simulation import run_simulation
 from src.checklist_validation import run_validation
+from src.prep_data_gen import run_prep_data_gen
+from src.prep_quant_analysis import run_prep_quant_analysis
 
 
 def main() -> None:
@@ -69,6 +71,10 @@ def main() -> None:
     # Phase 9: Checklist tracker validation (Monte Carlo simulation)
     gt_df, tracker_df, sim_metadata = run_simulation(n_sessions=150)
     validation_report = run_validation(gt_df, tracker_df, sim_metadata, real_df=df)
+
+    # Phase 10: Prep phase quantitative analysis (simulated tracker data)
+    prep_df = run_prep_data_gen(n_cases=50)
+    prep_results = run_prep_quant_analysis(prep_df)
 
     # Final summary
     physicians = sorted(df["PHYSICIAN"].unique())
